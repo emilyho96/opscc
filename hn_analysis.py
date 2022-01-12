@@ -55,8 +55,8 @@ df = df.sort_values(by='GARD').reset_index(drop=True)
 # ax.set_xlabel("RSI")
 # ax.set_ylabel("Count")
 # # f1.savefig('Figures/RSI_distribution')
+# 
 # =============================================================================
-
 
 # =============================================================================
 # # GARD histogram
@@ -89,14 +89,23 @@ df = df.sort_values(by='GARD').reset_index(drop=True)
 # km.fit(df['Time'],df['Event'])
 # km2 = KaplanMeierFitter()
 # km2.fit(df2['Time'],df2['Event'])
+# km3 = KaplanMeierFitter()
+# km3.fit(combdf['Time'],combdf['Event'])
 # plt.figure()
-# f3 = km.plot(color='black', ci_show=False, label='NKI')
+# f3 = km.plot(color='black', linestyle='dashed', ci_show=False, label='NKI')
 # km2.plot(ax=f3, linestyle='dashed', ci_show=False, label='Other')
+# km3.plot(ax=f3, linestyle='dashed', ci_show=False, label='Combined')
 # plt.ylim([0,1])
 # plt.xlabel('Time (years)')
 # plt.title('Event-free Survival')
 # # plt.savefig('Figures/KM')
 # =============================================================================
+
+
+# joint plot
+fig = plt.figure(figsize=(7,5))
+sns.jointplot(data=combdf, x=combdf['RSI'], y=combdf['GARD'], hue=combdf['Source'])
+# sns.jointplot(data=combdf, x=combdf['TD'], y=combdf['GARD'], hue=combdf['Source'])
 
 
 # =============================================================================
@@ -324,16 +333,19 @@ df = df.sort_values(by='GARD').reset_index(drop=True)
   
 # print cox analysis
 temp = df[['Event','Time','GARD']]
-model = CoxPHFitter(baseline_estimation_method='spline',n_baseline_knots=2)
+temp['Time'].replace(0,0.001,inplace=True)
+model = CoxPHFitter()
 model.fit(df=temp, duration_col='Time', event_col='Event')
-print('NKI data, Cox model summary')
+# print('NKI data, Cox model summary')
 cox = model.summary
+print(cox)
 
 temp = df2[['Event','Time','GARD']]
 model2 = CoxPHFitter()
 model2.fit(df=temp, duration_col='Time', event_col='Event')
-print('Other data, Cox model summary')
+# print('Other data, Cox model summary')
 cox2 = model2.summary
+print(cox2)
 
 temp = pd.concat([cox,cox2]).reset_index(drop=True)
 
