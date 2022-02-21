@@ -1,0 +1,277 @@
+title: "RSI,GARD HNSCC Analysis"
+output:
+  pdf_document: default
+html_document:
+  df_print: paged
+rmdformats: html_clean
+editor_options:
+  chunk_output_type: inline
+---
+  
+  ```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+
+```{r}
+library(gridExtra)
+library(grid)
+library(ggstance)
+library(colorspace)
+library(tidyverse)
+library(dplyr)
+library(readxl)
+library(survival)
+library(rms)
+library(knitr)
+library(rmdformats)
+library(xtable)
+library(ggplot2)
+library(reticulate)
+
+options(xtable.floating = FALSE, xtable.timestamp = "", xtable.comment = FALSE)
+options(max.print="75")
+knitr::opts_chunk$set(echo=FALSE, cache=FALSE, prompt=FALSE,tidy=TRUE,
+                      comment=NA,message=FALSE,warning=FALSE)
+opts_knit$set(width=75)
+```
+
+```{r, include = FALSE}
+q <- c("#2980b9","#10ac84","#8e44ad","#7f8c8d","#34495e","#b71c1c",rgb(.9,.55,.2),"#fb8c00","#27ae60","#4f4f4f","#2b2b2b")
+q2 <-        c("#ff5252","#34ace0",   "#33d9b2","#706fd3","#ff793f","#3867d6",  "#808e9b","#f7b731","#2b2b2b")
+names(q2) <- c("Breast", "Endometrium","TNBC", "Pancreas", "Head & Neck","NSCLC", "Glioma","Melanoma","Pooled")
+q3 <- c(
+  # "#ff0011",
+  "#ff5252",
+  "#f071ac", # "#ff526f", #"#ff1414",
+  "#c92c2c",
+  "#34ace0", 
+  "#33d9b2", "#077d61",
+  "#706fd3",
+  "#ff793f",
+  "#3867d6", 
+  "#808e9b",
+  "#f7b731",
+  "#2b2b2b")
+
+names(q3) <- c("Breast (Erasmus)" ,   "Breast (Karolinksa)" , "Breast (NKI)"  ,
+               "Endometrium (TCC)" ,
+               "TNBC (NKI)" ,  "TNBC (MCC)"  ,
+               "Pancreas (TCC)"  ,
+               "Head & Neck (NKI)" ,
+               "NSCLC (MCC)" ,
+               "Glioma (TCGA)" , 
+               "Melanoma (TCC)" ,
+               "Pooled")
+
+```
+
+
+
+# Dose-GARD Distribution Comparison
+```{r}
+library(dplyr)
+
+# if you replace this data file with a file combining 2 datasets, just make the "Source" column have different values
+data1<-read.csv(file = "NKI_HN.csv")
+data2<-read.csv(file = "NKI_HN.csv")
+data <- bind_rows(data1, data2)
+
+# data<-subset(data1, Site=='HN') %>%
+#   pivot_longer(cols = c(GARD,TD),names_to = "Type",values_to = "Values") %>%
+#   mutate(Label = if_else(Type=='GARD','GARD','RT Dose'))
+
+# if source was different, could make y = Source
+ggplot(data1, aes(x = GARD, y = factor(Event))) + 
+  geom_violin() + 
+  geom_boxplot(width = 0.1)
+
+  # geom_violin()
+
+Limits <- unique(data$Site)%>%sort(decreasing = T)
+
+ggplot(data) + 
+  geom_boxplot(aes(x=GARD,y=Site, color=Source), outlier.shape = NA) +
+  geom_jitter(aes(x=GARD, y=Site,color=Source), height = .15, size=0.8,alpha=.6)  # +
+  # scale_alpha_manual(values=c(.8,.4)) +
+  # scale_color_manual(values=q2[Limits]) + #q2[c(1,2,8,5,9,4,3,11,6)]) +
+  # scale_fill_manual(values=q2[Limits]) + #q2[c(1,2,8,5,9,4,3,11,6)]) +
+  # scale_y_discrete(limits = Limits) +
+  # facet_wrap(~Label, nrow = 2) +
+  # coord_cartesian(xlim = c(0,100)) +
+  # xlab("") + ylab("") +
+  # theme_gray() + theme(axis.title = element_blank(), strip.text = element_text(face = "bold"))
+```
+
+
+```{r plot_gard_td}
+# install.packages("patchwork")
+library(patchwork)
+
+
+plot_gard <- ggplot(data1, aes(x = GARD, y = 1)) + 
+  geom_violin() + 
+  geom_boxplot(width = 0.1) + 
+  xlim(limits = c(0, 160))
+
+plot_alpha <- ggplot(data1, aes(x = alpha, y = 1)) + 
+  geom_violin() + 
+  geom_boxplot(width = 0.1) + 
+  xlim(limits = c(0, 160))
+
+
+plot_gard / plot_alpha
+
+
+```
+
+# Cox plot
+```{r}
+library(rms)
+# replace data file with new one
+data<-read.csv(file = "NKI_HN.csv")
+# data<-select(data, Source,RSI,GARD,Time,Event)
+  # dplyr::select(data, Source_Site, Source, Site, Cohort, RSI, GARD, Time, Event, TD, Received_RT) %>%
+f<-cph(Surv(Time, Event) ~ GARD, data=data, x=T, y=T, surv = T)
+p<-Predict(f, GARD = seq(1,80,by=1))
+p<-data.frame(p)
+# stats_HN <- summary.fit(f) 
+#   rename('chi-sq' = chisq) %>%
+  
+ggplot(p) + geom_line(aes(x=GARD,y=yhat),color = 'red') +
+geom_abline(intercept=0, slope=0) +
+geom_ribbon(aes(x=GARD,ymax=upper,ymin=lower,fill = 'red'), alpha=.2) + 
+scale_x_continuous(expand = expansion(mult=0, add=0)) +
+# facet_wrap(~Outcome, nrow = 1) +
+xlab("GARD") + 
+ylab("log Relative Hazard") +
+theme_classic() +
+theme(panel.border = element_rect(fill = rgb(1,1,1,0),size = .75)) # +
+# geom_label(data = stats_HN,
+#            fill = rgb(.5,.5,.5,.1), hjust="left",
+#            size=2.4, label.r = unit(2,"points"),
+#            label.size = 0, show.legend = FALSE,
+#            aes(label = sprintf("Coef = %s \nChi-Sq = %s \nP = %.4f", coef, chisq, p), x=30, y=-2))
+
+# fit<-cph(Surv(Time, Event) ~ rcs(GARD,3), data=data, x=T, y=T)
+# fit.rcs<-fit
+#stats_rec_rcs<-c(c(anova(fit)[c(1,3,4),1]),c(anova(fit)[c(1,3,4),3]))
+
+# interaction_rec_rcs <- ggplot(p) + geom_line(aes(x=GARD,y=yhat,color=Received_RT), size=.4) +
+#   geom_ribbon(aes(x=GARD,ymin=lower,ymax=upper,fill=Received_RT),alpha=.2) +
+#   geom_vline(xintercept=cutpoint, size=.4, linetype='22') +
+#   scale_y_continuous(expand = expansion(mult=0,add=0), limits=c(-4,3)) +
+#   scale_x_continuous(expand = expansion(mult=0,add=0), 
+#                      # minor_breaks = c(seq(5,80,by=5)), 
+#                      limits = c(0,80)) + 
+#   ylab("log Relative Hazard (First Recurrence)") + xlab("GARD") + 
+#   theme_bw() +
+#   theme(legend.position = "left")
+```
+
+```{python}
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+from lifelines import KaplanMeierFitter
+from lifelines.statistics import logrank_test
+from lifelines import WeibullFitter
+from lifelines import CoxPHFitter
+from scipy.optimize import curve_fit
+from matplotlib import collections as matcoll
+from scipy import stats 
+```
+
+```{python}
+# should have RSI, n, d, Time, and Event columns
+df2 = pd.read_csv('NKI_HN.csv')
+df2['Source'] = "other"
+df2 = df2[:50]
+# load data
+df = pd.read_csv('NKI_HN.csv')
+combdf = pd.concat([df,df2]).reset_index(drop=True)
+
+# calculate RxRSI
+d = 2
+beta = 0.05
+n = 1
+
+ag = -np.log(df['RSI'])/(n*d)-beta*d
+df['alpha_g'] = ag
+gard = df['n']*df['d']*(ag+beta*df['d'])
+df['GARD'] = gard
+
+df = df.sort_values(by='GARD').reset_index(drop=True)
+
+# RSI histogram
+f1 = plt.figure(figsize=(7,5))
+ax = f1.add_subplot(1,1,1)
+sns.histplot(data=combdf, ax=ax, stat="count",
+             x="RSI", kde=True,
+             palette="deep", hue="Source",
+             element="bars", legend=False)
+ax.set_title("RSI Distribution")
+ax.set_xlabel("RSI")
+ax.set_ylabel("Count")
+plt.show()
+# f1.savefig('Figures/RSI_distribution')
+```
+
+```{python}
+# GARD histogram
+f2 = plt.figure(figsize=(7,5))
+ax2 = f2.add_subplot(1,1,1)
+sns.histplot(data=combdf, ax=ax2, stat="count",
+             x="GARD", kde=True,
+             palette="deep", hue="Source",
+             element="bars", legend=False)
+ax2.set_title("GARD Distribution")
+ax2.set_xlabel("GARD")
+ax2.set_ylabel("Count")
+plt.show()
+# f2.savefig('Figures/GARD_distribution')
+```
+
+```{python}
+# GARD/RT distributions, box
+f2 = plt.figure(figsize=(7,5))
+ax2 = f2.add_subplot(1,1,1)
+sns.set_style('white')
+sns.boxplot(data=combdf, ax=ax2, x ="GARD", y="Source", color='white', showfliers= False)
+sns.stripplot(data=combdf, ax=ax2, x ="GARD", y="Source", palette="deep", hue="Source")
+plt.show()
+```
+
+```{python}
+# KM curve
+km = KaplanMeierFitter()
+km.fit(df['Time'],df['Event'])
+km2 = KaplanMeierFitter()
+km2.fit(df2['Time'],df2['Event'])
+km3 = KaplanMeierFitter()
+km3.fit(combdf['Time'],combdf['Event'])
+plt.figure()
+f3 = km.plot(color='black', linestyle='dashed', ci_show=False, label='NKI')
+km2.plot(ax=f3, linestyle='dashed', ci_show=False, label='Other')
+km3.plot(ax=f3, linestyle='dashed', ci_show=False, label='Combined')
+plt.ylim([0,1])
+plt.xlabel('Time (years)')
+plt.title('Event-free Survival')
+plt.show()
+# plt.savefig('Figures/KM')
+```
+
+```{python}
+# joint plot
+fig = plt.figure(figsize=(7,5))
+sns.jointplot(data=combdf, x=combdf['RSI'], y=combdf['GARD'], hue=combdf['Source'])
+# sns.jointplot(data=combdf, x=combdf['TD'], y=combdf['GARD'], hue=combdf['Source'])
+plt.show()
+```
+
+```{python}
+```
+
+```{python}
+```

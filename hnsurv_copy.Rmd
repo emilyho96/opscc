@@ -1,0 +1,169 @@
+---
+title: "hnsurv_copy"
+output: html_document
+---
+
+title: "RSI,GARD HNSCC Analysis"
+output:
+  pdf_document: default
+html_document:
+  df_print: paged
+rmdformats: html_clean
+editor_options:
+  chunk_output_type: inline
+---
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+
+```{r R libraries}
+library(gridExtra)
+library(grid)
+library(ggstance)
+library(colorspace)
+library(tidyverse)
+library(dplyr)
+library(readxl)
+library(survival)
+library(rms)
+library(knitr)
+library(rmdformats)
+library(xtable)
+library(ggplot2)
+library(reticulate)
+```
+
+
+```{r Cox plot of combined datasets}
+
+library(rms)
+
+data1<-read.csv(file = "NKI_HN.csv")
+
+# Replace file path here
+data2<-read.csv(file = "NKI_HN.csv")
+data2['Source'] <- 'other'
+data <- bind_rows(data1, data2)
+
+f<-cph(Surv(Time, Event) ~ GARD, data=data, x=T, y=T, surv=T)
+p<-Predict(f, GARD = seq(1,80,by=1))
+p<-data.frame(p)
+
+
+ggplot(p) + 
+  geom_line(aes(x=GARD, y=yhat)) +
+  geom_abline(intercept=0, slope=0) +
+  geom_ribbon(aes(x=GARD,ymax=upper,ymin=lower, fill = 'red'), alpha=.2) + 
+  scale_x_continuous(expand = expansion(mult=0, add=0)) +
+  xlab("GARD") + 
+  ylab("log Relative Hazard") +
+  theme_classic() +
+  theme(panel.border = element_rect(fill = rgb(1,1,1,0),size = .75)) 
+```
+
+
+```{python Python libraries}
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+from lifelines import KaplanMeierFitter
+from lifelines.statistics import logrank_test
+from lifelines import WeibullFitter
+from lifelines import CoxPHFitter
+from scipy.optimize import curve_fit
+from matplotlib import collections as matcoll
+from scipy import stats 
+```
+
+```{python calculations}
+
+# should have RSI, n, d, Time, and Event columns 
+df2 = pd.read_csv('NKI_HN.csv')
+df2['Source'] = "other"
+df2 = df2[:50]
+# load data
+df = pd.read_csv('NKI_HN.csv')
+combdf = pd.concat([df,df2]).reset_index(drop=True)
+
+# calculate RxRSI
+d = 2
+beta = 0.05
+n = 1
+
+ag = -np.log(df['RSI'])/(n*d)-beta*d
+df['alpha_g'] = ag
+gard = df['n']*df['d']*(ag+beta*df['d'])
+df['GARD'] = gard
+
+df = df.sort_values(by='GARD').reset_index(drop=True)
+
+# RSI histogram
+f1 = plt.figure(figsize=(7,5))
+ax = f1.add_subplot(1,1,1)
+sns.histplot(data=combdf, ax=ax, stat="count",
+             x="RSI", kde=True,
+             palette="deep", hue="Source",
+             element="bars", legend=False)
+ax.set_title("RSI Distribution")
+ax.set_xlabel("RSI")
+ax.set_ylabel("Count")
+plt.show()
+f1.savefig('Figures/RSI_distribution')
+```
+
+```{python GARD histograms}
+
+f2 = plt.figure(figsize=(7,5))
+ax2 = f2.add_subplot(1,1,1)
+sns.histplot(data=combdf, ax=ax2, stat="count",
+             x="GARD", kde=True,
+             palette="deep", hue="Source",
+             element="bars", legend=False)
+ax2.set_title("GARD Distribution")
+ax2.set_xlabel("GARD")
+ax2.set_ylabel("Count")
+plt.show()
+f2.savefig('Figures/GARD_distribution')
+```
+
+```{python GARD boxplots}
+
+f2 = plt.figure(figsize=(7,5))
+ax2 = f2.add_subplot(1,1,1)
+sns.set_style('white')
+sns.boxplot(data=combdf, ax=ax2, x="GARD", y="Source", color='white', showfliers=False)
+sns.stripplot(data=combdf, ax=ax2, x="GARD", y="Source", palette="deep", hue="Source")
+plt.show()
+f2.savefig('Figures/GARD_box')
+```
+
+```{python KM curves}
+
+km = KaplanMeierFitter()
+km.fit(df['Time'],df['Event'])
+km2 = KaplanMeierFitter()
+km2.fit(df2['Time'],df2['Event'])
+km3 = KaplanMeierFitter()
+km3.fit(combdf['Time'],combdf['Event'])
+plt.figure()
+f3 = km.plot(color='black', linestyle='dashed', ci_show=False, label='NKI')
+km2.plot(ax=f3, linestyle='dashed', ci_show=False, label='Other')
+km3.plot(ax=f3, linestyle='dashed', ci_show=False, label='Combined')
+plt.ylim([0,1])
+plt.xlabel('Time (years)')
+plt.title('Event-free Survival')
+plt.show()
+plt.savefig('Figures/KM')
+```
+
+```{python joint plot, GARD and RSI}
+
+fig = plt.figure(figsize=(7,5))
+sns.jointplot(data=combdf, x=combdf['RSI'], y=combdf['GARD'], hue=combdf['Source'])
+plt.show()
+plt.savefig('Figures/joint')
+```
+
