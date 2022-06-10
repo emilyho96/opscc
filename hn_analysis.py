@@ -19,54 +19,44 @@ from lifelines import CoxPHFitter
 from scipy.optimize import curve_fit
 from matplotlib import collections as matcoll
 from scipy import stats 
+# import rpy2.rinterface as rinterface
 
 
-# replace next lines to load in new data
-# should have RSI, n, d, Time, and Event columns
-df2 = pd.read_csv('NKI_HN.csv')
-df2['Source'] = "other"
-df2 = df2[:50]
-# load data
-df = pd.read_csv('NKI_HN.csv')
-combdf = pd.concat([df,df2]).reset_index(drop=True)
-
-# calculate RxRSI
-d = 2
-beta = 0.05
-n = 1
-
-ag = -np.log(df['RSI'])/(n*d)-beta*d
-df['alpha_g'] = ag
-gard = df['n']*df['d']*(ag+beta*df['d'])
-df['GARD'] = gard
+df = pd.read_csv('GARD_HPVpos3.csv')
+df['Source'] = 'Loris'
+df = df.sort_values(by='GARD').reset_index().drop(columns=['index'])
+df2 = pd.read_csv('NKI_HN2.csv')
+df2['Source'] = 'NKI'
 
 
-df = df.sort_values(by='GARD').reset_index(drop=True)
 
 # =============================================================================
-# # RSI histogram
-# f1 = plt.figure(figsize=(7,5))
-# ax = f1.add_subplot(1,1,1)
-# sns.histplot(data=combdf, ax=ax, stat="count", 
-#              x="RSI", kde=True,
-#              palette="deep", hue="Source",
-#              element="bars", legend=False)
-# ax.set_title("RSI Distribution")
-# ax.set_xlabel("RSI")
-# ax.set_ylabel("Count")
-# # f1.savefig('Figures/RSI_distribution')
-# 
+# # TD vs GARD boxplot
+# a = list(df['TD']) + list(df['GARD'])
+# b = list(['TD']*len(df)) + list(['GARD']*len(df))
+# df2 = np.transpose(pd.DataFrame(data=[a,b]))
+# df2 = df2.rename(columns={0: "value", 1: "type"})
+# f2 = plt.figure(figsize=(7,5))
+# ax2 = f2.add_subplot(1,1,1)
+# sns.set_style('white')
+# sns.boxplot(data=df2, ax=ax2, x="value", color='white', y='type', showfliers= False)
+# sns.stripplot(data=df2, ax=ax2, x="value", palette="deep", y="type")
+# # sns.boxplot(data=df, ax=ax2, x ="GARD", color='white', showfliers= False)
+# # sns.stripplot(data=df, ax=ax2, x ="GARD", palette="deep", hue="Source")
+# plt.ylabel('')
+# plt.show()
 # =============================================================================
+
 
 # =============================================================================
 # # GARD histogram
 # f2 = plt.figure(figsize=(7,5))
 # ax2 = f2.add_subplot(1,1,1)
-# sns.histplot(data=combdf, ax=ax2, stat="count", 
+# sns.histplot(data=df, ax=ax2, stat="count", 
 #              x="GARD", kde=True,
-#              palette="deep", hue="Source",
+#              palette="deep", 
 #              element="bars", legend=False)
-# ax2.set_title("GARD Distribution")
+# ax2.set_title("OPSCC GARD Distribution")
 # ax2.set_xlabel("GARD")
 # ax2.set_ylabel("Count")
 # # f2.savefig('Figures/GARD_distribution')
@@ -74,12 +64,55 @@ df = df.sort_values(by='GARD').reset_index(drop=True)
 
 
 # =============================================================================
-# # GARD/RT distributions, box
-# f2 = plt.figure(figsize=(7,5))
-# ax2 = f2.add_subplot(1,1,1)
-# sns.set_style('white')
-# sns.boxplot(data=combdf, ax=ax2, x ="GARD", y="Source", color='white', showfliers= False)
-# sns.stripplot(data=combdf, ax=ax2, x ="GARD", y="Source", palette="deep", hue="Source")
+# # comparing RSI distr from sources
+# temp = pd.concat([df,df2]).reset_index(drop=True)
+# test = stats.ks_2samp(temp[temp['Source']=='Loris']['RSI'],temp[temp['Source']=='NKI']['RSI'])
+# 
+# # hist version
+# f3 = plt.figure(figsize=(7,5))
+# ax3 = f3.add_subplot(1,1,1)
+# sns.histplot(data=temp, ax=ax3, stat="count", 
+#               x="RSI", kde=True,
+#               palette="deep", hue="Source",
+#               element="bars", legend=True)
+# ax3.set_title("RSI distribution comparison")
+# ax3.set_xlabel("RSI")
+# ax3.set_ylabel("")
+# plt.text(0.30,10,'KS p='+str(round(test[1],2)))
+# # kde version
+# fig = sns.kdeplot(data=temp, x='RSI', hue='Source', palette='Blues', fill=True, common_norm=False, alpha=.5, linewidth=0.1)
+# fig.set_yticklabels([])
+# fig.set_ylabel('')
+# plt.title('RSI distribution comparison')
+# =============================================================================
+
+
+# comparing RSI distr from sources
+temp = pd.concat([df,df2]).reset_index(drop=True)
+test = stats.ks_2samp(temp[temp['Source']=='Loris']['GARD'],temp[temp['Source']=='NKI']['GARD'])
+
+# # kde version
+# fig = sns.kdeplot(data=temp, x='GARD', hue='Source', palette='Blues', fill=True, common_norm=False, alpha=.5, linewidth=0.1)
+# fig.set_yticklabels([])
+# fig.set_ylabel('')
+# plt.title('GARD distribution comparison')
+# hist version
+f3 = plt.figure(figsize=(7,5))
+ax3 = f3.add_subplot(1,1,1)
+sns.histplot(data=temp, ax=ax3, stat="count", 
+              x="GARD", kde=True,
+              palette="deep", hue="Source",
+              element="bars", legend=True)
+plt.title("GARD distribution comparison")
+ax3.set_ylabel("")
+ax3.set_yticklabels([])
+plt.text(100,10,'KS p='+str(round(test[1],2)))
+
+
+# =============================================================================
+# # joint plot
+# f5 = plt.figure(figsize=(7,5))
+# sns.jointplot(data=df, x=df['RSI'], y=df['GARD'])
 # =============================================================================
 
 
@@ -102,116 +135,152 @@ df = df.sort_values(by='GARD').reset_index(drop=True)
 # =============================================================================
 
 
-# joint plot
-fig = plt.figure(figsize=(7,5))
-sns.jointplot(data=combdf, x=combdf['RSI'], y=combdf['GARD'], hue=combdf['Source'])
-# sns.jointplot(data=combdf, x=combdf['TD'], y=combdf['GARD'], hue=combdf['Source'])
+# =============================================================================
+# # KDEs of GARD by TNM
+# temp = df[(~df['TNM8'].isnull()) & (df['TNM8']!=0)]
+# fig = sns.kdeplot(data=temp, x='GARD', hue='TNM8', palette='Blues', fill=True, common_norm=False, alpha=.5, linewidth=0.1)
+# fig.set_yticklabels([])
+# fig.set_ylabel('')
+# plt.title('GARD distribution grouped by TNM stage')
+# 
+# # hist version
+# fig=sns.histplot(data=temp, x='GARD', kde=True, hue="TNM8", multiple="layer", palette="deep") # 
+# fig.set_yticklabels([])
+# fig.set_yticklabels([])
+# fig.set_ylabel('')
+# plt.title('GARD distribution grouped by TNM stage')
+# 
+# one = df[df['TNM8']=='I']
+# two = df[df['TNM8']=='II']
+# three = df[df['TNM8']=='III']
+# stats.ks_2samp(one['GARD'],two['GARD'])
+# stats.ks_2samp(three['GARD'],two['GARD'])
+# stats.ks_2samp(three['GARD'],one['GARD'])
+# =============================================================================
+
+
+# run comparison KM for dataset based on a GARD cut-point
+# returns log-rank stats
+def KMbyGARD(time, event, sort, cut, show = False):
+   
+    # throw error if cut-point is out of the range
+    if cut < sort.min() or cut > sort.max():
+        print("Cut-point out of range")
+        return
+   
+    temp = pd.DataFrame()
+    temp['Time'] = time
+    temp['Event'] = event
+    temp['sort'] = sort
+    temp = temp.sort_values(by='sort')
+    
+    above = temp.loc[temp['sort'] > cut]
+    below = temp.loc[temp['sort'] <= cut]
+    
+    km_above = KaplanMeierFitter()
+    km_above.fit(above['Time'],above['Event'],label='GARD > '+str(cut))
+    km_below = KaplanMeierFitter()
+    km_below.fit(below['Time'],below['Event'],label='GARD < '+str(cut))
+    
+    results = logrank_test(above['Time'],below['Time'],event_observed_A=above['Event'], event_observed_B=below['Event'])
+    
+    # optional plot
+    if show == True:
+        
+        a2 = km_above.plot(ci_show=False)
+        km_below.plot(ax=a2,ci_show=False)
+        
+    return results, km_above, km_below
+
+
+
+# iterates thtrough GARD to minimize p-value
+# returns a 1-smaller list of p-values, ordered by GARD
+def findCut(time, event, gard, show = False):
+    
+    p = []
+    
+    for cut_val in gard:
+        
+        if cut_val == gard.max():
+            break
+        
+        results, _, _ = KMbyGARD(time, event, gard, cut_val)
+        p.append(results.p_value)
+        
+    if show == True:
+        
+        a1 = sns.scatterplot(x=gard[:-1], y=p)
+        a1.set_yscale('log')
+        plt.title("p-value vs GARD cut-point")
+    
+    return p, gard[:-1].tolist()
 
 
 # =============================================================================
-# # run comparison KM for dataset based on a GARD cut-point
-# # returns log-rank stats
-# def KMbyGARD(time, event, sort, cut, show = False):
-#    
-#     # throw error if cut-point is out of the range
-#     if cut < sort.min() or cut > sort.max():
-#         print("Cut-point out of range")
-#         return
-#    
-#     temp = pd.DataFrame()
-#     temp['Time'] = time
-#     temp['Event'] = event
-#     temp['sort'] = sort
-#     temp = temp.sort_values(by='sort')
-#     
-#     above = temp.loc[temp['sort'] > cut]
-#     below = temp.loc[temp['sort'] <= cut]
-#     
-#     km_above = KaplanMeierFitter()
-#     km_above.fit(above['Time'],above['Event'],label='GARD > '+str(cut))
-#     km_below = KaplanMeierFitter()
-#     km_below.fit(below['Time'],below['Event'],label='GARD < '+str(cut))
-#     
-#     results = logrank_test(above['Time'],below['Time'],event_observed_A=above['Event'], event_observed_B=below['Event'])
-#     
-#     # optional plot
-#     if show == True:
-#         
-#         a2 = km_above.plot(ci_show=False)
-#         km_below.plot(ax=a2,ci_show=False)
-#         
-#     return results, km_above, km_below
-# 
-# 
-# # iterates thtrough GARD to minimize p-value
-# # returns a 1-smaller list of p-values, ordered by GARD
-# def findCut(time, event, gard, show = False):
-#     
-#     p = []
-#     
-#     for cut_val in gard:
-#         
-#         if cut_val == gard.max():
-#             break
-#         
-#         results, _, _ = KMbyGARD(time, event, gard, cut_val)
-#         p.append(results.p_value)
-#         
-#     if show == True:
-#         
-#         a1 = sns.scatterplot(x=gard[:-1], y=p)
-#         a1.set_yscale('log')
-#         plt.title("p-value vs GARD cut-point")
-#     
-#     return p, gard[:-1].tolist()
-# 
-# 
 # # finding gard_t (cut) for cohorts
 # # first calcluate p for each cut
-# p_vals, gard = findCut(df['Time'], df['Event'], df['GARD'])
-# p_vals2, gard2 = findCut(df2['Time'], df2['Event'], df2['GARD'])
+# p_vals, gard = findCut(df['Time_OS'], df['Event_OS'], df['GARD'])
 # 
-# # =============================================================================
-# # # use this section to fit a polynomial to estimate cut then manually enter value
-# # coeff = np.polyfit(gard, p_vals, 6)
-# # p = np.poly1d(coeff)
-# # x = np.linspace(df['GARD'].min(), df['GARD'].max(), num=100)
-# # y = p(x)
-# # coeff2 = np.polyfit(gard2, p_vals2, 6)
-# # p2 = np.poly1d(coeff2)
-# # x2 = np.linspace(df2['GARD'].min(), df2['GARD'].max(), num=100)
-# # y2 = p2(x)
-# # f4 = plt.figure()
-# # plt.plot(x,y)
-# # plt.scatter(gard,p_vals)
-# # plt.plot(x2,y2)
-# # plt.scatter(gard2,p_vals2)
-# # plt.xlabel('GARD cut-point')
-# # plt.ylabel('p-value')
-# # plt.ylim([-0.2,1.1])
+# # use this section to fit a polynomial to estimate cut then manually enter value
+# coeff = np.polyfit(gard, p_vals, 6)
+# p = np.poly1d(coeff)
+# x = np.linspace(df['GARD'].min(), df['GARD'].max(), num=100)
+# y = p(x)
+# f4 = plt.figure()
+# plt.plot(x,y)
+# plt.scatter(gard,p_vals)
+# plt.xlabel('GARD cut-point')
+# plt.ylabel('p-value')
+# plt.ylim([-0.2,1.1])
 # # f4.savefig('Figures/p_cut')
-# # # cut = 
-# # =============================================================================
+# # cut = 
 # 
-# # alternatively, simply use the cut with minimized p 
-# cut = gard[p_vals.index(min(p_vals))]
-# _, a, b = KMbyGARD(df['Time'], df['Event'], df['GARD'], cut)
-# cut2 = gard2[p_vals2.index(min(p_vals2))]
-# _, a2, b2 = KMbyGARD(df2['Time'], df2['Event'], df2['GARD'], cut2)
+# =============================================================================
+
+
+# =============================================================================
+# cut = 65 # median
+# results, a, b = KMbyGARD(df['Time_OS'], df['Event_OS'], df['GARD'], cut)
+# p = round(results.p_value,3)
+# 
 # plt.figure()
-# f5 = a.plot(color='blue', ci_show=False, label='NKI above cut')
-# b.plot(ax=f5, color='blue', linestyle='dashed', ci_show=False, label='NKI below cut')
-# a2.plot(ax=f5, color='orange', ci_show=False, label='Other above cut')
-# b2.plot(ax=f5, color='orange', linestyle='dashed', ci_show=False, label='Other below cut')
+# f5 = a.plot(color='blue', ci_show=True, label='Above median GARD')
+# b.plot(ax=f5, color='blue', linestyle='dashed', ci_show=True, label='Below median GARD')
 # plt.title('KM comparison for GARD cut')
-# label1 = 'NKI: p ='+str(min(p_vals))+'\nGARD cut: '+str(cut)
-# plt.text(0.1,0.3,label1)
-# label2 = 'Other: p ='+str(min(p_vals2))+'\nGARD cut: '+str(cut2)
-# plt.text(0.1,0.1,label2)
-# plt.ylim([0,1])
-# plt.xlabel('Time (years)')
+# label1 = 'p = '+str(p)+'\nGARD cut: '+str(cut)
+# plt.text(0.1,0.1,label1)
+# plt.ylim([0,1.1])
+# plt.xlabel('Time (months)')
 # plt.ylabel('Event-free Survival')
 # # plt.savefig('Figures/KM_cut')
+# 
+# =============================================================================
+
+
+# =============================================================================
+# # plot stratified by TNM instead of GARD
+# temp = df[:]
+# 
+# tnmHigh = temp.loc[temp['TNM8'] == 'III']
+# tnmLow = temp.loc[temp['TNM8'] != 'III']
+# 
+# above = KaplanMeierFitter()
+# above.fit(tnmHigh['Time_OS'],tnmHigh['Event_OS'],label='Stage III')
+# below = KaplanMeierFitter()
+# below.fit(tnmLow['Time_OS'],tnmLow['Event_OS'],label='Stage I and II')
+# 
+# results = logrank_test(tnmHigh['Time_OS'],tnmLow['Time_OS'],event_observed_A=tnmHigh['Event_OS'], event_observed_B=tnmLow['Event_OS'])
+# p = round(results.p_value, 3)
+# 
+# fig4 = above.plot(ci_show=True)
+# below.plot(ax=fig4, ci_show=True)
+# plt.title('KM stratified by TNM')
+# label1 = 'p = '+str(p)
+# plt.text(0.1,0.1,label1)
+# plt.ylim([0,1.1])
+# plt.xlabel('Time (months)')
+# plt.ylabel('Event-free Survival')
 # =============================================================================
 
 
@@ -331,22 +400,49 @@ sns.jointplot(data=combdf, x=combdf['RSI'], y=combdf['GARD'], hue=combdf['Source
 # =============================================================================
 
   
-# print cox analysis
-temp = df[['Event','Time','GARD']]
-temp['Time'].replace(0,0.001,inplace=True)
-model = CoxPHFitter()
-model.fit(df=temp, duration_col='Time', event_col='Event')
-# print('NKI data, Cox model summary')
-cox = model.summary
-print(cox)
+# =============================================================================
+# # print cox analysis
+# temp = df[['Event','Time','GARD']]
+# temp['Time'].replace(0,0.001,inplace=True)
+# model = CoxPHFitter()
+# model.fit(df=temp, duration_col='Time', event_col='Event')
+# # print('NKI data, Cox model summary')
+# cox = model.summary
+# print(cox)
+# 
+# temp = df2[['Event','Time','GARD']]
+# model2 = CoxPHFitter()
+# model2.fit(df=temp, duration_col='Time', event_col='Event')
+# # print('Other data, Cox model summary')
+# cox2 = model2.summary
+# print(cox2)
+# 
+# temp = pd.concat([cox,cox2]).reset_index(drop=True)
+# =============================================================================
 
-temp = df2[['Event','Time','GARD']]
-model2 = CoxPHFitter()
-model2.fit(df=temp, duration_col='Time', event_col='Event')
-# print('Other data, Cox model summary')
-cox2 = model2.summary
-print(cox2)
 
-temp = pd.concat([cox,cox2]).reset_index(drop=True)
+# =============================================================================
+# # TNM AUC(t)
+# temp = df[:]
+# tmax = round(max(df['Time_OS']))
+# times = []
+# sens_tnm = []
+# spec_tnm = []
+# for i in range(10, tmax):
+#    high_die = len(temp[(temp['TNM8'] == 'III') & (temp['Event_OS'] == 1) & (temp['Time_OS']<=i)]) 
+#    high_live = len(temp[(temp['TNM8'] == 'III')]) - high_die
+#    low_die = len(temp[(temp['TNM8'] != 'III') & (temp['Event_OS'] == 1) & (temp['Time_OS']<=i)]) 
+#    low_live = len(temp[(temp['TNM8'] != 'III')]) - low_die
+#    sens_tnm.append(high_die/(high_die + low_die))
+#    spec_tnm.append(low_live/(low_live + high_live))
+#    times.append(i)
+# auc_tnm = np.array(sens_tnm)+np.array(spec_tnm)
+# auc_tnm /= 2
+# 
+# plt.plot(times, auc_tnm)
+# plt.ylabel('AUC')
+# plt.xlabel('time (months)')
+# plt.ylim([0,1])
+# =============================================================================
 
 

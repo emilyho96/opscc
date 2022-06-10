@@ -16,6 +16,7 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 ```{r}
 library(gridExtra)
 library(grid)
+# install.packages('ggstance')
 library(ggstance)
 library(colorspace)
 library(tidyverse)
@@ -66,6 +67,280 @@ names(q3) <- c("Breast (Erasmus)" ,   "Breast (Karolinksa)" , "Breast (NKI)"  ,
 
 ```
 
+# ROC
+```{r}
+# install.packages('caret')
+library(caret)
+
+temp<-read.csv(file="GARD_HPVpos2.csv")
+temp$stage <- rep(NA, nrow(temp))
+temp[temp$TNM8 == 'I' | temp$TNM8 == 'II', ][, "stage"] <- "low"
+temp[temp$TNM8 == 'III', ][, "stage"] <- "high"
+temp$GARDneg = temp$GARD*(-1)
+
+# library(ROCit)
+# ROCit_gard <- rocit(score=temp$GARD,class=temp$Event_flipped)
+# plot(ROCit_gard, values=F)
+# summary(ROCit_gard)
+
+sens_gard = nrow(subset(temp, GARD<70 & Event_OS==1))/nrow(subset(temp, Event_OS==1))
+spec_gard = nrow(subset(temp, GARD>70 & Event_OS==0))/nrow(subset(temp, Event_OS==0))
+t=24
+high_die = nrow(subset(temp, stage=='high' & Event_OS==1 & Time_OS<=t))
+high_live = nrow(subset(temp, stage=='high')) - high_die
+low_die = nrow(subset(temp, stage=='low' & Event_OS==1 & Time_OS<=t))
+low_live = nrow(subset(temp, stage=='low')) - low_die
+sens_tnm = high_die/(high_die + low_die)
+spec_tnm = low_live/(low_live + high_live)
+```
+
+
+``` {r timeROC}
+library('timeROC')
+timeROC_gard<-timeROC(T=temp$Time_OS, delta=temp$Event_OS, marker=temp$GARDneg,
+                  cause=1,weighting="marginal",
+                  times=seq(0,115,1), 
+                  # quantile(temp$GARD,probs=seq(0,1,0.05)), # 0,12,24,36,48,60,72,84,96,108), 
+                  iid=TRUE)
+plot(timeROC_gard, time= 24)
+plotAUCcurve(timeROC_gard, conf.int=TRUE,conf.band=TRUE,title('GARD(t)'))
+
+
+# note to self: AUC for piecewise ROC is the mean of sens and spec
+```
+
+```{r staging}
+library(Hmisc)
+temp<-read.csv(file="GARD_HPVpos.csv")
+# temp <- subset(data, TNM8!= 'NA', select=c(RSI, TNM8, Event_OS, Time_OS, Event, Time, GARD))
+temp$TNM <- rep(NA, nrow(temp))
+temp$TNM[temp$TNM8=='I'] <- 1
+temp$TNM[temp$TNM8=='II'] <- 2
+temp$TNM[temp$TNM8=='III'] <- 3
+temp$TNM_flipped <- rep(NA, nrow(temp))
+temp$TNM_flipped[temp$TNM8=='I'] <- -1
+temp$TNM_flipped[temp$TNM8=='II'] <- -2
+temp$TNM_flipped[temp$TNM8=='III'] <- -3
+# temp <- subset(temp, stage != 'NA')
+
+rcorr.cens(temp$GARD, Surv(temp$Time_OS,temp$Event_OS))
+rcorr.cens(temp$TNM, Surv(temp$Time_OS,temp$Event_OS))
+rcorr.cens(temp$TNM_flipped, Surv(temp$Time_OS,temp$Event_OS))
+
+# nrow(subset(temp, pTNM==1 & GARD>=80))
+histogram(~temp$GARD|temp$TNM,layout=c(1,3),nint=20,scales=list(relation='free'),xlab="GARD",ylab="Percent of Patients within TNM Stage")
+
+```
+
+```{r 2 cutpoints packages}
+library(here)
+library(survival)
+library(ggpubr)
+library(survminer)
+# library(patchwork)
+library(rms) # for coxph function that has additional stats
+library(stringr)
+library(tidyverse)
+```
+
+# Load data and survival function
+First we'll load the expression data from the `GSE48276` dataset. 
+```{r load_data}
+
+temp <- read.csv(file="GARD_HPVpos2.csv")
+# temp2 <- read.csv(file="NKI_HN2.csv")
+#in Jess's version, this column is predicted from the surv_os thing
+temp$pred_lp <- temp$GARD
+
+#not really sure if this is relevant bc Jess's version uses it to make the pred_lp column
+surv_os <- Surv(time = temp$Time_OS, event = temp$Event_OS)
+# surv <- Surv(time = temp$Time, event = temp$Event) 
+
+```
+
+# Optimal Cutpoint Analysis
+## Find optimal cutpoints
+Next, we'll find sweep all cutpoint options to find the optimal cutpoint for three (`sweep_cutpoints2`) groups. 
+```{r load_results}
+
+sweep_cutpoints2 <- function(tidy_data, surv_obj){
+   cutpoints_first = quantile(tidy_data$pred_lp, prob = seq(0, 1, 0.01))[-(1:5)]
+   cutpoints_first = cutpoints_first[-(96:101)]
+   cutpoint_first_vec <- c()
+   cutpoint_second_vec <- c()
+   low_n_vec <- c()
+   middle_n_vec <- c()
+   high_n_vec <- c()
+   chisq_vec <- c()
+   for (i in 1:length(cutpoints_first)){
+      pred_lp_after_cutoff <- tidy_data$pred_lp[tidy_data$pred_lp > min(cutpoints_first)]
+      cutpoints_second <- quantile(pred_lp_after_cutoff, prob = seq(0, 1, 0.01))[-(1:5)]
+      cutpoints_second <- cutpoints_second[-(96:101)]
+      for (j in 1:length(cutpoints_second)){
+         tidy_data_labs <- tidy_data %>%
+            mutate(pred_group = case_when(pred_lp <= cutpoints_first[i] ~ "low", 
+                                          pred_lp > cutpoints_first[i] &
+                                             pred_lp <= cutpoints_second[j] ~ "middle", 
+                                          pred_lp > cutpoints_second[j] ~ "high"))
+         survdiff_results <- survdiff(surv_obj ~ pred_group, data = tidy_data_labs)
+         chisq_vec <- c(chisq_vec, survdiff_results$chisq)
+         cutpoint_first_vec <- c(cutpoint_first_vec, cutpoints_first[[i]])
+         cutpoint_second_vec <- c(cutpoint_second_vec, cutpoints_second[[j]])
+         low_n_vec <- c(low_n_vec, nrow(tidy_data_labs %>% filter(pred_group == "low")))
+         middle_n_vec <- c(middle_n_vec, nrow(tidy_data_labs %>% filter(pred_group == "middle")))
+         high_n_vec <- c(high_n_vec, nrow(tidy_data_labs %>% filter(pred_group == "high")))
+      }
+   }
+   data.frame(cutpoint1 = cutpoint_first_vec,
+              cutpoint2 = cutpoint_second_vec,
+              cutdiff = cutpoint_second_vec - cutpoint_first_vec,
+              low_n = low_n_vec,
+              middle_n = middle_n_vec,
+              high_n = high_n_vec,
+              chisq = chisq_vec) %>%
+      rowwise() %>%
+      mutate(min_n = min(low_n, middle_n, high_n)) %>%
+      ungroup()
+}
+
+# cutpoints <- sweep_cutpoints2(temp, surv_os)
+cutpoints <- sweep_cutpoints2(temp, surv)
+
+cutpoints_filtered <- cutpoints %>%
+  filter(min_n >= 10) %>% #require at least 4 samples in each group
+  filter(chisq > 10) %>% # == max(chisq)   #cutpoints with the highest chisq result
+  filter(cutdiff >= 10)
+
+```
+
+
+## Classify predictions
+Now, we'll classify each of our samples as high, medium, or low. 
+```{r classify predictions}
+df <- cutpoints_filtered[order(-cutpoints_filtered$chisq),]
+
+# they all cut the data with the same samples in each group
+# taking the first value to get a single value for each cutpoint
+rank <- 1
+double_cutpoint_best <- c(cut1 = df[rank, ]$cutpoint1, 
+                          cut2 = df[rank, ]$cutpoint2)
+
+lab1 = paste("GARD <",toString(trunc(10*df[rank, ]$cutpoint1)/10))
+lab2 = paste("GARD ",toString(trunc(10*df[rank, ]$cutpoint1)/10),"-",toString(trunc(10*df[rank, ]$cutpoint2)/10))
+lab3 = paste("GARD >",toString(trunc(10*df[rank, ]$cutpoint2)/10))
+
+temp <- temp %>%
+      mutate(
+          pred_3grp_tert = factor(case_when(pred_lp < quantile(pred_lp, 0.33) ~ "1_Low",
+                                pred_lp >= quantile(pred_lp, 0.33) & pred_lp < quantile(pred_lp, 0.66) ~ "2_Middle",
+                                pred_lp >= quantile(pred_lp, 0.66) ~ "3_High"),
+                                ordered = TRUE),
+          pred_3grp_optimal = case_when(pred_lp <= double_cutpoint_best["cut1"] ~ "1_Low",
+                                pred_lp > double_cutpoint_best["cut1"] &
+                                   pred_lp <= double_cutpoint_best["cut2"] ~ "2_Middle",
+                                pred_lp > double_cutpoint_best["cut2"] ~ "3_High"),
+          pred_3grp_2550 = factor(case_when(pred_lp < quantile(pred_lp, 0.25) ~ "1_Low",
+                                pred_lp >= quantile(pred_lp, 0.25) &
+                                   pred_lp < quantile(pred_lp, 0.75) ~ "2_Middle",
+                                pred_lp >= quantile(pred_lp, 0.75) ~ "3_High"), 
+                                ordered = TRUE))
+
+```
+
+
+## Plot Results
+```{r Tertiles by 33%}
+km_tert_by33 <- survfit(surv_os ~ temp$pred_3grp_tert)
+
+gg_grp3_tert <- ggsurvplot(km_tert_by33, data = temp, size = 1,
+   conf.int = FALSE, # Add confidence interval
+   pval = TRUE, # Add p-value
+   risk.table = TRUE, # Add risk table
+   risk.table.height = 0.25, # change if you have >2 groups
+   risk.table.y.text.col = T, # show colors in table listing
+   ncensor.plot = FALSE,
+   ncensor.plot.height = 0.25,
+   xlab = "Time in months", # adjust X axis label
+   xlim = c(0, 125),
+   break.time.by = 12, # break X axis in time intervals
+   legend.labs = c("Low GARD", "Middle GARD", "High GARD"),
+   title = "OPSCC grouped by GARD tertile 33/33/33",
+   ggtheme = theme_bw() + theme(plot.title = element_text(hjust = 0.5))
+   )
+
+gg_grp3_tert
+```
+
+```{r Tertiles by 25/50/25}
+km_tert_by25_50_25 <- survfit(surv_os ~ temp$pred_3grp_2550)
+
+gg_grp3_2550 <- ggsurvplot(km_tert_by25_50_25, data = temp, size = 1,
+   conf.int = FALSE, # Add confidence interval
+   pval = TRUE, # Add p-value
+   risk.table = TRUE, # Add risk table
+   risk.table.height = 0.25, # change if you have >2 groups
+   risk.table.y.text.col = T, # show colors in table listing
+   ncensor.plot = FALSE,
+   ncensor.plot.height = 0.25,
+   xlab = "Time in months", # adjust X axis label
+   xlim = c(0, 125),
+   break.time.by = 12, # break X axis in time intervals
+   legend.labs = c("Low GARD", "Middle GARD", "High GARD"),
+   title = "OPSCC grouped by GARD, 25/50/25",
+   ggtheme = theme_bw() + theme(plot.title = element_text(hjust = 0.5))
+   )
+
+gg_grp3_2550
+```
+
+```{r Optimal 3 group cutpoints}
+km_tert_opt <- survfit(surv_os ~ temp$pred_3grp_optimal)
+
+gg_grp3_opt <- ggsurvplot(km_tert_opt, data = temp, size = 1,
+   conf.int = FALSE, # Add confidence interval
+   pval = TRUE, # Add p-value
+   risk.table = TRUE, # Add risk table
+   risk.table.height = 0.25, # change if you have >2 groups
+   risk.table.y.text.col = T, # show colors in table listing
+   ncensor.plot = FALSE,
+   ncensor.plot.height = 0.25,
+   xlab = "Time in months", # adjust X axis label
+   xlim = c(0, 125),
+   break.time.by = 12, # break X axis in time intervals
+   legend.labs = c(lab1, lab2, lab3), #c("Low GARD", "Middle GARD", "High GARD"),
+   title = "HNSCC grouped by GARD tertile (optimal)",
+   ggtheme = theme_bw() + theme(plot.title = element_text(hjust = 0.5))
+   )
+
+gg_grp3_opt
+
+
+surv <- Surv(time = temp2$Time, event = temp2$Event) 
+temp2$pred_3grp_optimal <-'3_High'
+temp2$pred_3grp_optimal[temp2$GARD<double_cutpoint_best[2]] <- '2_Middle'
+temp2$pred_3grp_optimal[temp2$GARD<double_cutpoint_best[1]] <- '1_Low'
+
+km_tert_opt2 <- survfit(surv ~ temp2$pred_3grp_optimal)
+
+gg_grp3_opt2 <- ggsurvplot(km_tert_opt2, data = temp2, size = 1,
+   conf.int = FALSE, # Add confidence interval
+   pval = TRUE, # Add p-value
+   risk.table = TRUE, # Add risk table
+   risk.table.height = 0.25, # change if you have >2 groups
+   risk.table.y.text.col = T, # show colors in table listing
+   ncensor.plot = FALSE,
+   ncensor.plot.height = 0.25,
+   xlab = "Time in months", # adjust X axis label
+   xlim = c(0, 10),
+   break.time.by = 1, # break X axis in time intervals
+   legend.labs = c(lab2, lab3), #c("Low GARD", "Middle GARD", "High GARD"),
+   title = "HNSCC grouped by GARD tertile (optimal)",
+   ggtheme = theme_bw() + theme(plot.title = element_text(hjust = 0.5))
+   )
+gg_grp3_opt2
+
+```
+
 
 
 # Dose-GARD Distribution Comparison
@@ -108,20 +383,30 @@ ggplot(data) +
 # install.packages("patchwork")
 library(patchwork)
 
+data <- temp
 
 plot_gard <- ggplot(data1, aes(x = GARD, y = 1)) + 
   geom_violin() + 
   geom_boxplot(width = 0.1) + 
   xlim(limits = c(0, 160))
 
-plot_alpha <- ggplot(data1, aes(x = alpha, y = 1)) + 
+plot_td <- ggplot(data1, aes(x = TD, y = 1)) + 
   geom_violin() + 
   geom_boxplot(width = 0.1) + 
   xlim(limits = c(0, 160))
 
+plot_td / plot_gard
 
-plot_gard / plot_alpha
-
+gardplot <- ggplot(data) + theme(axis.text.y=element_blank(),axis.ticks.y=element_blank()) + xlim(0,160) +
+  geom_boxplot(aes(x=GARD, y = 2), outlier.shape = NA) 
+  geom_jitter(aes(x=GARD, y = 2), height = .15, size=08,alpha=.6)
+ 
+  
+tdplot <- ggplot(data) + theme(axis.text.y=element_blank(),axis.ticks.y=element_blank()) + xlim(0,160) +
+  geom_boxplot(aes(x=TD), outlier.shape = NA) 
+  geom_jitter(aes(x=TD), height = .15, size=0.8,alpha=.6)
+  
+tdplot / gardplot
 
 ```
 
@@ -183,25 +468,10 @@ from matplotlib import collections as matcoll
 from scipy import stats 
 ```
 
+all of the below has been changed in python script
 ```{python}
 # should have RSI, n, d, Time, and Event columns
-df2 = pd.read_csv('NKI_HN.csv')
-df2['Source'] = "other"
-df2 = df2[:50]
-# load data
-df = pd.read_csv('NKI_HN.csv')
-combdf = pd.concat([df,df2]).reset_index(drop=True)
-
-# calculate RxRSI
-d = 2
-beta = 0.05
-n = 1
-
-ag = -np.log(df['RSI'])/(n*d)-beta*d
-df['alpha_g'] = ag
-gard = df['n']*df['d']*(ag+beta*df['d'])
-df['GARD'] = gard
-
+df = pd.read_csv("GARD_HPVpos2.csv")
 df = df.sort_values(by='GARD').reset_index(drop=True)
 
 # RSI histogram
@@ -231,15 +501,28 @@ ax2.set_xlabel("GARD")
 ax2.set_ylabel("Count")
 plt.show()
 # f2.savefig('Figures/GARD_distribution')
+
+
 ```
 
 ```{python}
+# # GARD/RT distributions, box
+# f2 = plt.figure(figsize=(7,5))
+# ax2 = f2.add_subplot(1,1,1)
+# sns.set_style('white')
+# sns.boxplot(data=combdf, ax=ax2, x ="GARD", y="Source", color='white', showfliers= False)
+# sns.stripplot(data=combdf, ax=ax2, x ="GARD", y="Source", palette="deep", hue="Source")
+# plt.show()
+
+df2 = pd.read_csv("GARD_HPVpos.csv")
+
 # GARD/RT distributions, box
 f2 = plt.figure(figsize=(7,5))
 ax2 = f2.add_subplot(1,1,1)
 sns.set_style('white')
-sns.boxplot(data=combdf, ax=ax2, x ="GARD", y="Source", color='white', showfliers= False)
-sns.stripplot(data=combdf, ax=ax2, x ="GARD", y="Source", palette="deep", hue="Source")
+sns.boxplot(data=df2, ax=ax2, x ="GARD", color='white', showfliers= False)
+sns.stripplot(data=df2, ax=ax2, x ="GARD", palette="deep")
+plt.title('OPSCC GARD Distribution')
 plt.show()
 ```
 
@@ -271,6 +554,71 @@ plt.show()
 ```
 
 ```{python}
+
+# run comparison KM for dataset based on a GARD cut-point
+# returns log-rank stats
+def KMbyGARD(time, event, sort, cut, show = False):
+   
+    # throw error if cut-point is out of the range
+    if cut < sort.min() or cut > sort.max():
+        print("Cut-point out of range")
+        return
+   
+    temp = pd.DataFrame()
+    temp['T'] = time
+    temp['E'] = event
+    temp['sort'] = sort
+    temp = temp.sort_values(by='sort')
+    
+    above = temp.loc[temp['sort'] > cut]
+    below = temp.loc[temp['sort'] <= cut]
+    
+    km_above = KaplanMeierFitter()
+    km_above.fit(above['T'],above['E'],label='GARD > '+str(cut))
+    km_below = KaplanMeierFitter()
+    km_below.fit(below['T'],below['E'],label='GARD < '+str(cut))
+    
+    results = logrank_test(above['T'],below['T'],event_observed_A=above['E'], event_observed_B=below['E'])
+    # print(results.p_value)
+    
+    # optional plot
+    if show == True:
+        
+        a2 = km_above.plot(ci_show=False)
+        km_below.plot(ax=a2,ci_show=False)
+        
+    return results, km_above, km_below
+
+
+# iterates thtrough GARD to minimize p-value
+# returns a 1-smaller list of p-values, ordered by GARD
+def findCut(time, event, gard, show = False):
+    
+    p = []
+    
+    for cut_val in gard:
+        
+        if cut_val == gard.max():
+            break
+        
+        results, _, _ = KMbyGARD(time, event, gard, cut_val)
+        p.append(results.p_value)
+        
+    if show == True:
+        
+        a1 = sns.scatterplot(x=gard[:-1], y=p)
+        a1.set_yscale('log')
+        plt.title("p-value vs GARD cut-point")
+    
+    return p, gard[:-1].tolist()
+
+
+# # finding gard_t for cohorts
+# df2 = df2.sort_values(by='GARD').reset_index(drop=True)
+# p_vals, gard = findCut(df2['Time_OS'], df2['Event_OS'], df2['GARD'])
+# plt.scatter(gard, p_vals, color='royalblue')
+# plt.show()
+
 ```
 
 ```{python}
