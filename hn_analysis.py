@@ -22,12 +22,34 @@ from scipy import stats
 # import rpy2.rinterface as rinterface
 
 
-df = pd.read_csv('GARD_HPVpos3.csv')
-df['Source'] = 'Loris'
-df = df.sort_values(by='GARD').reset_index().drop(columns=['index'])
-df2 = pd.read_csv('NKI_HN2.csv')
-df2['Source'] = 'NKI'
+df = pd.read_csv('GARD_HPVpos5.csv')
+# df['Source'] = 'Loris'
+# df = df.sort_values(by='GARD').reset_index().drop(columns=['index'])
+# df['cancer_death'] = 0
+# df.loc[df['Cause_of_Death']==1, 'cancer_death'] = 1
+df = df.loc[df['RT']=='definitive']
+# df = df.drop(df[df['TD']<60].index)
 
+# df2 = pd.read_csv('NKI_HN2.csv')
+# df2['Source'] = 'NKI'
+
+# SOC range, cut
+cut = df['GARD'].median()
+
+# constants/calculations
+d = 2
+beta = 0.05 
+n = 1
+
+ag = -np.log(df['RSI'])/(n*d)-beta*d
+df['alpha_g'] = ag
+d_c = df['GARD']/df['TD']/beta - ag/beta # dose/fx
+d_c = df['GARD']/df['TD']/beta + np.log(df['RSI'])/n/d/beta + d
+df['EQD2'] = df['TD'] * (d_c+10) / (d+10) # alpha/beta = 10
+# df['RxRSI'] = cut/(df['alpha_g']+beta*d)
+
+
+# df.to_csv('/Users/Emily/Library/CloudStorage/Box-Box/CWRU/Research/MathOnc/opscc/GARD_HPVpos5.csv',index=False)
 
 
 # =============================================================================
@@ -43,6 +65,24 @@ df2['Source'] = 'NKI'
 # sns.stripplot(data=df2, ax=ax2, x="value", palette="deep", y="type")
 # # sns.boxplot(data=df, ax=ax2, x ="GARD", color='white', showfliers= False)
 # # sns.stripplot(data=df, ax=ax2, x ="GARD", palette="deep", hue="Source")
+# plt.ylabel('')
+# plt.show()
+# =============================================================================
+
+
+# =============================================================================
+# # TD vs EQD boxplot
+# a = list(df['EQD2']) + list(df['GARD'])
+# b = list(['EQD2']*len(df)) + list(['GARD']*len(df))
+# df2 = np.transpose(pd.DataFrame(data=[a,b]))
+# df2 = df2.rename(columns={0: "value", 1: "type"})
+# f2 = plt.figure(figsize=(7,5))
+# ax2 = f2.add_subplot(1,1,1)
+# sns.set_style('white')
+# sns.boxplot(data=df2, ax=ax2, x="value", color='white', y='type', showfliers= False)
+# sns.stripplot(data=df2, ax=ax2, x="value", palette="deep", y="type")
+# # ax2.set_xscale('log')
+# plt.xlim([0,110])
 # plt.ylabel('')
 # plt.show()
 # =============================================================================
@@ -87,26 +127,28 @@ df2['Source'] = 'NKI'
 # =============================================================================
 
 
-# comparing RSI distr from sources
-temp = pd.concat([df,df2]).reset_index(drop=True)
-test = stats.ks_2samp(temp[temp['Source']=='Loris']['GARD'],temp[temp['Source']=='NKI']['GARD'])
-
-# # kde version
-# fig = sns.kdeplot(data=temp, x='GARD', hue='Source', palette='Blues', fill=True, common_norm=False, alpha=.5, linewidth=0.1)
-# fig.set_yticklabels([])
-# fig.set_ylabel('')
-# plt.title('GARD distribution comparison')
-# hist version
-f3 = plt.figure(figsize=(7,5))
-ax3 = f3.add_subplot(1,1,1)
-sns.histplot(data=temp, ax=ax3, stat="count", 
-              x="GARD", kde=True,
-              palette="deep", hue="Source",
-              element="bars", legend=True)
-plt.title("GARD distribution comparison")
-ax3.set_ylabel("")
-ax3.set_yticklabels([])
-plt.text(100,10,'KS p='+str(round(test[1],2)))
+# =============================================================================
+# # comparing GARD distr from sources
+# temp = pd.concat([df,df2]).reset_index(drop=True)
+# test = stats.ks_2samp(temp[temp['Source']=='Loris']['GARD'],temp[temp['Source']=='NKI']['GARD'])
+# 
+# # # kde version
+# # fig = sns.kdeplot(data=temp, x='GARD', hue='Source', palette='Blues', fill=True, common_norm=False, alpha=.5, linewidth=0.1)
+# # fig.set_yticklabels([])
+# # fig.set_ylabel('')
+# # plt.title('GARD distribution comparison')
+# # hist version
+# f3 = plt.figure(figsize=(7,5))
+# ax3 = f3.add_subplot(1,1,1)
+# sns.histplot(data=temp, ax=ax3, stat="count", 
+#               x="GARD", kde=True,
+#               palette="deep", hue="Source",
+#               element="bars", legend=True)
+# plt.title("GARD distribution comparison")
+# ax3.set_ylabel("")
+# ax3.set_yticklabels([])
+# plt.text(100,10,'KS p='+str(round(test[1],2)))
+# =============================================================================
 
 
 # =============================================================================
@@ -117,27 +159,9 @@ plt.text(100,10,'KS p='+str(round(test[1],2)))
 
 
 # =============================================================================
-# # KM curve
-# km = KaplanMeierFitter()
-# km.fit(df['Time'],df['Event'])
-# km2 = KaplanMeierFitter()
-# km2.fit(df2['Time'],df2['Event'])
-# km3 = KaplanMeierFitter()
-# km3.fit(combdf['Time'],combdf['Event'])
-# plt.figure()
-# f3 = km.plot(color='black', linestyle='dashed', ci_show=False, label='NKI')
-# km2.plot(ax=f3, linestyle='dashed', ci_show=False, label='Other')
-# km3.plot(ax=f3, linestyle='dashed', ci_show=False, label='Combined')
-# plt.ylim([0,1])
-# plt.xlabel('Time (years)')
-# plt.title('Event-free Survival')
-# # plt.savefig('Figures/KM')
-# =============================================================================
-
-
-# =============================================================================
 # # KDEs of GARD by TNM
 # temp = df[(~df['TNM8'].isnull()) & (df['TNM8']!=0)]
+# temp = temp.sort_values(by='TNM8').reset_index().drop(columns=['index'])
 # fig = sns.kdeplot(data=temp, x='GARD', hue='TNM8', palette='Blues', fill=True, common_norm=False, alpha=.5, linewidth=0.1)
 # fig.set_yticklabels([])
 # fig.set_ylabel('')
@@ -158,6 +182,77 @@ plt.text(100,10,'KS p='+str(round(test[1],2)))
 # stats.ks_2samp(three['GARD'],one['GARD'])
 # =============================================================================
 
+
+
+# not sure what this chunk is for
+# =============================================================================
+# # KDEs of GARD by TNM
+# temp = df[(~df['TNM8'].isnull()) & (df['TNM8']!=0)]
+# # fig = sns.kdeplot(data=temp, x='GARD', hue='TNM8', palette='Blues', fill=True, common_norm=False, alpha=.5, linewidth=0.1)
+# # fig.set_yticklabels([])
+# # fig.set_ylabel('')
+# # plt.title('GARD distribution grouped by TNM stage')
+# 
+# # hist version
+# fig=sns.histplot(data=temp, x='GARD', kde=False, hue="TNM8", multiple="layer", palette="deep", alpha=0.3) # 
+# fig.set_yticklabels([])
+# fig.set_ylabel('')
+# # fig.set_xticklabels([1,2,3])
+# plt.title('TNM distribution grouped by optimal GARD tertile')
+# 
+# one = df[df['TNM8']=='I']
+# two = df[df['TNM8']=='II']
+# three = df[df['TNM8']=='III']
+# stats.ks_2samp(one['GARD'],two['GARD'])
+# stats.ks_2samp(three['GARD'],two['GARD'])
+# stats.ks_2samp(three['GARD'],one['GARD'])
+# 
+# =============================================================================
+
+
+# fig=sns.boxplot(data=temp, x='GARD',y='pred_3grp_optimal', hue='TNM8') # 
+# sns.histplot(data=temp, x="pred_3grp_optimal", stat='density', shrink=0.8, hue='TNM8',multiple="dodge")
+# plt.title('TNM distribution grouped by GARD tertile')
+
+# =============================================================================
+# temp = pd.read_csv('os_tert_opt.csv')
+# # temp = temp.replace('1_Low','GARD_low')
+# # temp = temp.replace('2_Middle','GARD_medium')
+# # temp = temp.replace('3_High','GARD_high')
+# temp = temp.rename(columns={"pred_3grp_optimal": "GARD tertile"})
+# x,y = 'GARD tertile','TNM8'
+# 
+# # (df1
+# # .groupby(x)[y]
+# # .value_counts(normalize=True)
+# # .mul(100)
+# # .rename('percent')
+# # .reset_index()
+# # .pipe((sns.catplot,'data'), x=x,y='percent',hue=y,kind='bar'))
+# 
+# # for adding percentages
+# df1 = temp.groupby(x)[y].value_counts(normalize=True)
+# df1 = df1.mul(100)
+# df1 = df1.rename('Percent').reset_index()
+# 
+# sns.set(rc={'figure.figsize':(16,12)})
+# sns.set(rc={"figure.dpi":150})
+# sns.set_context(rc={"font.size":8,"axes.titlesize":14,"axes.labelsize":11})   
+# sns.set_theme(style='white')
+# 
+# g = sns.catplot(x=x,y='Percent',hue=y,kind='bar',data=df1,aspect=1.3)
+# g.ax.set_ylim(0,100)
+# g.ax.set(xlabel=None)
+# g.ax.set_xticklabels(['GARD_low','GARD_medium','GARD_high'])
+# g.ax.set(title='TNM distribution grouped by GARD tertile')
+# 
+# for p in g.ax.patches:
+#     txt = str(p.get_height().round(2)) + '%'
+#     txt_x = p.get_x() 
+#     txt_y = p.get_height()
+#     g.ax.text(txt_x,txt_y,txt)
+# =============================================================================
+    
 
 # run comparison KM for dataset based on a GARD cut-point
 # returns log-rank stats
@@ -234,32 +329,28 @@ def findCut(time, event, gard, show = False):
 # plt.ylabel('p-value')
 # plt.ylim([-0.2,1.1])
 # # f4.savefig('Figures/p_cut')
-# # cut = 
-# 
 # =============================================================================
 
 
 # =============================================================================
-# cut = 65 # median
 # results, a, b = KMbyGARD(df['Time_OS'], df['Event_OS'], df['GARD'], cut)
 # p = round(results.p_value,3)
 # 
 # plt.figure()
-# f5 = a.plot(color='blue', ci_show=True, label='Above median GARD')
-# b.plot(ax=f5, color='blue', linestyle='dashed', ci_show=True, label='Below median GARD')
+# f5 = a.plot(color='blue', ci_show=True, label='Above '+str(cut))
+# b.plot(ax=f5, color='blue', linestyle='dashed', ci_show=True, label='Below '+str(cut))
 # plt.title('KM comparison for GARD cut')
-# label1 = 'p = '+str(p)+'\nGARD cut: '+str(cut)
-# plt.text(0.1,0.1,label1)
+# # label1 = 'p = '+str(p)+'\nGARD cut: '+str(cut)
+# # plt.text(0.1,0.1,label1)
 # plt.ylim([0,1.1])
 # plt.xlabel('Time (months)')
 # plt.ylabel('Event-free Survival')
 # # plt.savefig('Figures/KM_cut')
-# 
 # =============================================================================
 
 
 # =============================================================================
-# # plot stratified by TNM instead of GARD
+# # KM plot stratified by TNM instead of GARD
 # temp = df[:]
 # 
 # tnmHigh = temp.loc[temp['TNM8'] == 'III']
@@ -281,6 +372,25 @@ def findCut(time, event, gard, show = False):
 # plt.ylim([0,1.1])
 # plt.xlabel('Time (months)')
 # plt.ylabel('Event-free Survival')
+# =============================================================================
+
+
+# =============================================================================
+# # KM curve
+# km = KaplanMeierFitter()
+# km.fit(df['Time_OS'],df['Event_OS'])
+# # km2 = KaplanMeierFitter()
+# # km2.fit(df2['Time'],df2['Event'])
+# # km3 = KaplanMeierFitter()
+# # km3.fit(combdf['Time'],combdf['Event'])
+# plt.figure()
+# f3 = km.plot(linestyle='dashed', ci_show=True)
+# # km2.plot(ax=f3, linestyle='dashed', ci_show=False, label='Other')
+# # km3.plot(ax=f3, linestyle='dashed', ci_show=False, label='Combined')
+# plt.ylim([0,1])
+# plt.xlabel('Time (years)')
+# plt.title('Event-free Survival')
+# # plt.savefig('Figures/KM')
 # =============================================================================
 
 
@@ -331,13 +441,11 @@ def findCut(time, event, gard, show = False):
 
 # =============================================================================
 # # RxRSI calc and sort for waterfall plot
-# # replace df to get that specific plot
-# df['RxRSI'] = cut/(df['alpha_g']+beta*d)
 # temp = df.sort_values(by='RxRSI').reset_index().drop(columns=['index'])
 # 
-# # group relative to the SOC range - CHECK RANGE
-# low = 66
+# # group relative to the SOC range 
 # high = 70
+# low = 54
 # hlines = []
 # llines = []
 # for i in range(len(temp)):
@@ -361,17 +469,19 @@ def findCut(time, event, gard, show = False):
 # plt.axhline(y=low,color='gray')
 # plt.axhline(y=high,color='gray')
 # plt.xlim([0,len(temp)])
-# plt.ylim([10,110])
+# plt.ylim([0,140])
 # plt.xlabel('Patient ID')
-# plt.ylabel('RxRSI (Gy) for GARD_T = '+str(cut))
-# plt.title('RxRSI compared to standard-of-care range')
-# plt.text(3, 80, str(lperc)+'% of patients require <'+str(low)+'Gy')
-# plt.text(3, 88, str(mperc)+'% of patients receive RxRSI \n within SOC range')
-# plt.text(3, 100, str(hperc)+'% of patients require >'+str(high)+'Gy')
+# plt.ylabel('RxRSI')
+# plt.title('RxRSI (Gy) for GARD_T = '+str(round(cut,1)))
+# plt.text(40, 20, str(lperc)+'% of patients require <'+str(low)+'Gy')
+# plt.text(40, 30, str(mperc)+'% of patients receive RxRSI within SOC range')
+# plt.text(40, 40, str(hperc)+'% of patients require >'+str(high)+'Gy')
 # plt.show()
 # # plt.savefig('Figures/RxRSI_waterfall')
-# 
-# 
+# =============================================================================
+
+
+# =============================================================================
 # # RxRSI histogram, colored
 # # replace df to get that specific plot
 # # CAUTION the color cutoff depends on the bin arrangement
@@ -443,6 +553,7 @@ def findCut(time, event, gard, show = False):
 # plt.ylabel('AUC')
 # plt.xlabel('time (months)')
 # plt.ylim([0,1])
+# plt.xlim([0,60])
 # =============================================================================
 
 

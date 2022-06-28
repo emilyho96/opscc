@@ -1,4 +1,4 @@
-title: "RSI,GARD HNSCC Analysis"
+title: "RSI, GARD HNSCC Analysis"
 output:
   pdf_document: default
 html_document:
@@ -8,12 +8,13 @@ editor_options:
   chunk_output_type: inline
 ---
   
-  ```{r setup, include=FALSE}
+```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 ```
 
 
-```{r}
+# setup
+```{r load packages and data}
 library(gridExtra)
 library(grid)
 # install.packages('ggstance')
@@ -29,109 +30,751 @@ library(rmdformats)
 library(xtable)
 library(ggplot2)
 library(reticulate)
+library(caret)
+library(survminer)
 
 options(xtable.floating = FALSE, xtable.timestamp = "", xtable.comment = FALSE)
 options(max.print="75")
 knitr::opts_chunk$set(echo=FALSE, cache=FALSE, prompt=FALSE,tidy=TRUE,
                       comment=NA,message=FALSE,warning=FALSE)
 opts_knit$set(width=75)
+
+
+temp<-read.csv(file="GARD_HPVpos5.csv")
+# temp$cancer_death <- rep(0, nrow(temp))
+# temp[temp$Cause_of_Death == 1,][, "cancer_death"] <- 1
+# temp$stage <- rep(NA, nrow(temp))
+# temp[temp$TNM8 == 'I' | temp$TNM8 == 'II', ][, "stage"] <- "low"
+# temp[temp$TNM8 == 'III', ][, "stage"] <- "high"
+# temp$GARDneg = temp$GARD*(-1)
+
+
+temp <- temp %>%
+  filter(RT == "definitive") %>%
+  filter(TD > 65)
+midpt = median(temp$GARD)
+temp[temp$GARD >= midpt, ][, "GARD_dichotomic"] <- "High GARD"
+temp[temp$GARD < midpt, ][, "GARD_dichotomic"] <- "Low GARD"
 ```
 
-```{r, include = FALSE}
-q <- c("#2980b9","#10ac84","#8e44ad","#7f8c8d","#34495e","#b71c1c",rgb(.9,.55,.2),"#fb8c00","#27ae60","#4f4f4f","#2b2b2b")
-q2 <-        c("#ff5252","#34ace0",   "#33d9b2","#706fd3","#ff793f","#3867d6",  "#808e9b","#f7b731","#2b2b2b")
-names(q2) <- c("Breast", "Endometrium","TNBC", "Pancreas", "Head & Neck","NSCLC", "Glioma","Melanoma","Pooled")
-q3 <- c(
-  # "#ff0011",
-  "#ff5252",
-  "#f071ac", # "#ff526f", #"#ff1414",
-  "#c92c2c",
-  "#34ace0", 
-  "#33d9b2", "#077d61",
-  "#706fd3",
-  "#ff793f",
-  "#3867d6", 
-  "#808e9b",
-  "#f7b731",
-  "#2b2b2b")
-
-names(q3) <- c("Breast (Erasmus)" ,   "Breast (Karolinksa)" , "Breast (NKI)"  ,
-               "Endometrium (TCC)" ,
-               "TNBC (NKI)" ,  "TNBC (MCC)"  ,
-               "Pancreas (TCC)"  ,
-               "Head & Neck (NKI)" ,
-               "NSCLC (MCC)" ,
-               "Glioma (TCGA)" , 
-               "Melanoma (TCC)" ,
-               "Pooled")
+```{r define summary.fit}
+# ---- summary of rms fit function ------ #
+summary.fit <- function(fit){
+  sum.tbl <- tibble("coef"=0,"exp(coef)"=0,"se"=0,"z"=0,"chi-sq"=0,"p"=0, "n"=0,"n.event"=0,"Dxy"=0)
+  coef <- unname(fit$coefficients)[1]
+  sum.tbl["coef"] <- coef
+  sum.tbl["exp(coef)"] <- exp(coef)[1]
+  se <- unname(sqrt(fit$var))[1]
+  sum.tbl["se"] <- se
+  zScore <- coef/se
+  sum.tbl["z"] <- zScore
+  sum.tbl["p"] <- (1-pnorm(abs(zScore),0,1))*2
+  sum.tbl["chi-sq"] <- anova(fit)[1,1]
+  sum.tbl <- round(sum.tbl,digits=3)
+  sum.tbl["n"] <- unname(fit$stats[1])
+  sum.tbl["n.event"] <- unname(fit$stats[2])
+  sum.tbl["Dxy"] <- unname(fit$stats[9])
+  sum.tbl
+}
 
 ```
 
 # ROC
-```{r}
-# install.packages('caret')
-library(caret)
-
-temp<-read.csv(file="GARD_HPVpos2.csv")
-temp$stage <- rep(NA, nrow(temp))
-temp[temp$TNM8 == 'I' | temp$TNM8 == 'II', ][, "stage"] <- "low"
-temp[temp$TNM8 == 'III', ][, "stage"] <- "high"
-temp$GARDneg = temp$GARD*(-1)
+```{r manual ROC + manual curve}
 
 # library(ROCit)
 # ROCit_gard <- rocit(score=temp$GARD,class=temp$Event_flipped)
 # plot(ROCit_gard, values=F)
 # summary(ROCit_gard)
 
-sens_gard = nrow(subset(temp, GARD<70 & Event_OS==1))/nrow(subset(temp, Event_OS==1))
-spec_gard = nrow(subset(temp, GARD>70 & Event_OS==0))/nrow(subset(temp, Event_OS==0))
+# sens_gard = nrow(subset(temp, GARD<70 & Event_OS==1))/nrow(subset(temp, Event_OS==1))
+# spec_gard = nrow(subset(temp, GARD>70 & Event_OS==0))/nrow(subset(temp, Event_OS==0))
+
 t=24
-high_die = nrow(subset(temp, stage=='high' & Event_OS==1 & Time_OS<=t))
-high_live = nrow(subset(temp, stage=='high')) - high_die
-low_die = nrow(subset(temp, stage=='low' & Event_OS==1 & Time_OS<=t))
-low_live = nrow(subset(temp, stage=='low')) - low_die
+high_die = nrow(subset(temp, TNM_dichotomic=='III' & Event_OS==1 & Time_OS<=t))
+high_live = nrow(subset(temp, TNM_dichotomic=='III')) - high_die
+low_die = nrow(subset(temp, TNM_dichotomic !='III' & Event_OS==1 & Time_OS<=t))
+low_live = nrow(subset(temp, TNM_dichotomic !='III')) - low_die
 sens_tnm = high_die/(high_die + low_die)
 spec_tnm = low_live/(low_live + high_live)
+auc = trunc(1000*(sens_tnm+spec_tnm)/2)/10
+
+myf<-function(x, x1=(1-spec_tnm), y1=sens_tnm){ 
+  firstInds<-intersect(which(x >= 0), which(x < x1)) 
+  secondInds<-intersect(which(x >= x1), which(x < 1))
+  y<-x
+  y[firstInds]<-y1/x1*x[firstInds]
+  y[secondInds]<-(1-y1)/(1-x1)*x[secondInds] + (y1-x1)/(1-x1)
+  y}
+identity<-function(x){
+  y<-x}
+x<-seq(from=0,to=1,by=0.005)
+lab=paste("ROC at time t=",t,", AUC=",auc, sep="")
+plot(x, myf(x), ylab="Sensitivity", xlab="1-Specificity", main=lab, col="white"); lines(x, myf(x), col="red"); lines(x,identity(x), col="black", lty="dashed")
+
+
+t=60
+high_die = nrow(subset(temp, TNM_dichotomic=='III' & Event_OS==1 & Time_OS<=t))
+high_live = nrow(subset(temp, TNM_dichotomic=='III')) - high_die
+low_die = nrow(subset(temp, TNM_dichotomic !='III' & Event_OS==1 & Time_OS<=t))
+low_live = nrow(subset(temp, TNM_dichotomic !='III')) - low_die
+sens_tnm = high_die/(high_die + low_die)
+spec_tnm = low_live/(low_live + high_live)
+auc = trunc(1000*(sens_tnm+spec_tnm)/2)/10
+
+# x <- c(0, (1-spec_tnm), 1) 
+# y <- c(0, sens_tnm, 1)
+# interp <- approx(x, y, n=80)
+# plot(x, y, pch=16, cex=.1)
+# points(interp, cex=.1)
+
+myf<-function(x, x1=(1-spec_tnm), y1=sens_tnm){ 
+  firstInds<-intersect(which(x >= 0), which(x < x1)) 
+  secondInds<-intersect(which(x >= x1), which(x < 1))
+  y<-x
+  y[firstInds]<-y1/x1*x[firstInds]
+  y[secondInds]<-(1-y1)/(1-x1)*x[secondInds] + (y1-x1)/(1-x1)
+  y}
+identity<-function(x){
+  y<-x}
+x<-seq(from=0,to=1,by=0.005)
+lab=paste("ROC at time t=",t,", AUC=",auc, sep="")
+plot(x, myf(x), ylab="Sensitivity", xlab="1-Specificity", main=lab, col="white"); lines(x, myf(x), col="red"); lines(x,identity(x), col="black", lty="dashed")
+
 ```
 
-
 ``` {r timeROC}
-library('timeROC')
+library(timeROC)
+library(survival)
+
+temp$GARDneg = temp$GARD*(-1)
+
 timeROC_gard<-timeROC(T=temp$Time_OS, delta=temp$Event_OS, marker=temp$GARDneg,
                   cause=1,weighting="marginal",
                   times=seq(0,115,1), 
                   # quantile(temp$GARD,probs=seq(0,1,0.05)), # 0,12,24,36,48,60,72,84,96,108), 
                   iid=TRUE)
 plot(timeROC_gard, time= 24)
-plotAUCcurve(timeROC_gard, conf.int=TRUE,conf.band=TRUE,title('GARD(t)'))
+plot(timeROC_gard, time= 60)
+
+# try editing source code to adjust ylim
+plotAUCcurve(timeROC_gard, conf.int=TRUE,conf.band=TRUE, title('GARD(t)'))
 
 
 # note to self: AUC for piecewise ROC is the mean of sens and spec
 ```
 
-```{r staging}
-library(Hmisc)
-temp<-read.csv(file="GARD_HPVpos.csv")
-# temp <- subset(data, TNM8!= 'NA', select=c(RSI, TNM8, Event_OS, Time_OS, Event, Time, GARD))
-temp$TNM <- rep(NA, nrow(temp))
-temp$TNM[temp$TNM8=='I'] <- 1
-temp$TNM[temp$TNM8=='II'] <- 2
-temp$TNM[temp$TNM8=='III'] <- 3
-temp$TNM_flipped <- rep(NA, nrow(temp))
-temp$TNM_flipped[temp$TNM8=='I'] <- -1
-temp$TNM_flipped[temp$TNM8=='II'] <- -2
-temp$TNM_flipped[temp$TNM8=='III'] <- -3
-# temp <- subset(temp, stage != 'NA')
+# Cox plot
+```{r GARD}
 
-rcorr.cens(temp$GARD, Surv(temp$Time_OS,temp$Event_OS))
-rcorr.cens(temp$TNM, Surv(temp$Time_OS,temp$Event_OS))
-rcorr.cens(temp$TNM_flipped, Surv(temp$Time_OS,temp$Event_OS))
+# normal OS
+f<-cph(Surv(Time_OS, Event_OS) ~ GARD, data=temp, x=T, y=T, surv=T)
+p<-Predict(f, GARD = seq(1,120,by=1))
+p<-data.frame(p)
+stats_HN <- summary.fit(f) 
+stats_HN <- stats_HN %>%
+  rename(chisq = 'chi-sq') 
+  
+ggplot(p) + geom_line(aes(x=GARD,y=yhat), color = 'red') +
+  geom_abline(intercept=0, slope=0) +
+  geom_ribbon(aes(x=GARD,ymax=upper,ymin=lower,fill = 'red'), alpha=.2) + 
+  scale_x_continuous(expand = expansion(mult=0, add=0)) +
+  # facet_wrap(~Outcome, nrow = 1) +
+  ggtitle("GARD and OS") +
+  xlab("GARD") + 
+  ylab("log Relative Hazard") +
+  theme_classic() +
+  # theme(panel.border = element_rect(fill = rgb(1,1,1,0),size = .75)) +
+  geom_label(data = stats_HN,
+             fill = rgb(.5,.5,.5,.1), hjust="left",
+             size=4, label.r = unit(2,"points"),
+             label.size = 0, show.legend = FALSE,
+             aes(label = sprintf("Coef = %s \nChi-Sq = %s \nP = %.4f", coef, chisq, p), x=20, y=-3))
 
-# nrow(subset(temp, pTNM==1 & GARD>=80))
-histogram(~temp$GARD|temp$TNM,layout=c(1,3),nint=20,scales=list(relation='free'),xlab="GARD",ylab="Percent of Patients within TNM Stage")
+
+# DSS
+f<-cph(Surv(Time_OS, cancer_death) ~ GARD, data=temp, x=T, y=T, surv = T)
+p<-Predict(f, GARD = seq(1,120,by=1))
+p<-data.frame(p)
+stats_HN <- summary.fit(f) 
+stats_HN <- stats_HN %>%
+  rename(chisq = 'chi-sq') 
+  
+ggplot(p) + geom_line(aes(x=GARD,y=yhat), color = 'red') +
+  geom_abline(intercept=0, slope=0) +
+  geom_ribbon(aes(x=GARD,ymax=upper,ymin=lower,fill = 'red'), alpha=.2) + 
+  scale_x_continuous(expand = expansion(mult=0, add=0)) +
+  # facet_wrap(~Outcome, nrow = 1) +
+  ggtitle("GARD and DSS") +
+  xlab("GARD") + 
+  ylab("log Relative Hazard") +
+  theme_classic() +
+  # theme(panel.border = element_rect(fill = rgb(1,1,1,0),size = .75)) +
+  geom_label(data = stats_HN,
+             fill = rgb(.5,.5,.5,.1), hjust="left",
+             size=4, label.r = unit(2,"points"),
+             label.size = 0, show.legend = FALSE,
+             aes(label = sprintf("Coef = %s \nChi-Sq = %s \nP = %.4f", coef, chisq, p), x=20, y=-4))
+```
+
+```{r EQD}
+# normal OS
+f<-cph(Surv(Time_OS, Event_OS) ~ EQD2, data=temp, x=T, y=T, surv=T)
+p<-Predict(f, EQD2 = seq(1,120,by=1))
+p<-data.frame(p)
+stats_HN <- summary.fit(f) 
+stats_HN <- stats_HN %>%
+  rename(chisq = 'chi-sq') 
+  
+ggplot(p) + geom_line(aes(x=EQD2,y=yhat), color = 'red') +
+  geom_abline(intercept=0, slope=0) +
+  geom_ribbon(aes(x=EQD2,ymax=upper,ymin=lower,fill = 'red'), alpha=.2) + 
+  scale_x_continuous(expand = expansion(mult=0, add=0)) +
+  # facet_wrap(~Outcome, nrow = 1) +
+  xlab("EQD2") + 
+  ylab("log Relative Hazard") +
+  ggtitle("EQD2 and OS") +
+  theme_classic() +
+  # theme(panel.border = element_rect(fill = rgb(1,1,1,0),size = .75)) +
+  geom_label(data = stats_HN,
+             fill = rgb(.5,.5,.5,.1), hjust="left",
+             size=4, label.r = unit(2,"points"),
+             label.size = 0, show.legend = FALSE,
+             aes(label = sprintf("Coef = %s \nChi-Sq = %s \nP = %.4f", coef, chisq, p), x=90, y=-35))
+
+
+# DSS
+f<-cph(Surv(Time_OS, cancer_death) ~ EQD2, data=temp, x=T, y=T, surv = T)
+p<-Predict(f, EQD2 = seq(1,120,by=1))
+p<-data.frame(p)
+stats_HN <- summary.fit(f) 
+stats_HN <- stats_HN %>%
+  rename(chisq = 'chi-sq') 
+  
+ggplot(p, ) + geom_line(aes(x=EQD2,y=yhat), color = 'red') +
+  geom_abline(intercept=0, slope=0) +
+  geom_ribbon(aes(x=EQD2,ymax=upper,ymin=lower,fill = 'red'), alpha=.2) + 
+  scale_x_continuous(expand = expansion(mult=0, add=0)) +
+  # facet_wrap(~Outcome, nrow = 1) +
+  # title("Primary disease-specific death") +
+  xlab("EQD2") + 
+  ylab("log Relative Hazard") +
+  ggtitle("EQD2 and DSS") +
+  theme_classic() +
+  # theme(panel.border = element_rect(fill = rgb(1,1,1,0),size = .75)) +
+  geom_label(data = stats_HN,
+             fill = rgb(.5,.5,.5,.1), hjust="left",
+             size=4, label.r = unit(2,"points"),
+             label.size = 0, show.legend = FALSE,
+             aes(label = sprintf("Coef = %s \nChi-Sq = %s \nP = %.4f", coef, chisq, p), x=90, y=-5))
+  
+```
+
+
+
+# Nomogram
+```{r Eash}
+library(tidyverse)
+library(plyr)
+library(survival)
+library(survminer)
+library(reshape)
+library(moments)
+library(gridExtra)
+library(rstatix)
+library(gt)
+library(paletteer)
+library(ggpubr)
+library(DiagrammeR)
+library(DiagrammeRsvg)
+library(rsvg)
+library(tableone)
+library(TDAstats)
+library(grid)
+library(gridExtra)
+library(ggplotify)
+library(png)
+library(rstatix)
+library(ggfortify)
+library(stringr)
+library(hablar)
+library(extrafont)
+library(rms)
+library(cmprsk)
+library(xtable)
+
+
+####Example of Calibration Curves####
+#The calibration curves are how you internally validate the model
+#Technically, you don't need thme to make a nomogram
+#But drawning them ensures your model is not overfitted and works internally well
+
+
+#Note you may have to mess around with the directory to read this in
+# data_valid <- readRDS("anon_data.rds")
+data_valid <- temp1
+
+# data_valid <- na.omit(data_valid)
+d <- datadist(data_valid)
+options(datadist = "d")
+
+#Getting survival function
+opsccsurv <- Surv(data_valid$Time_OS, data_valid$Event_OS)
+
+#Showing an example for 2 year validation
+#This function generates a Cox model and validates against 2 year survival
+#Note can validate for multiple survivals 
+#In my nomogram, I did 1, 2, 5, and 8 year
+#The nomogram will spit out a chance for each year survival (e.g. 60% for 1 year, 40% for year, etc.)
+#Then median survival is calculated as the weighted sum of each
+#I only showed the 2 year validation as example as code can take time to run
+model_2 <- cph(formula = opsccsurv ~ GARD + 
+                 TNM, 
+               data=data_valid, x = TRUE, y = TRUE, surv = TRUE, time.inc = 24)
+
+#Creating all the calibration objects
+#Essentially, B = 1000 means a thousand bootstrap samples are created
+#The model is regenerated on those boot straps
+#The apparent performance reflects the original model performance on bootstrap samples. 
+#The bias-corrected performance represents the performance of the same 
+#multivariable Cox model but recalculated using a bootstrap sample.
+#U- 730.5 refers to 2 years in days
+
+dats_2 <- calibrate(model_2, B=1000, u=24)
+
+#Setting up margins
+#The black line is the apparent
+par(mar = c(5, 5, 3, 1))
+plot(dats_2, lwd=1, lty=1, 
+     cex.axis=1, cex.main=1.2, cex.sub=0.6, 
+     xlab="",
+     ylab = "", subtitles = FALSE)
+legend(x=.575, y=.467, legend=c("Apparent", "Bias-corrected", "Ideal"), 
+       lty=c(1, 1, 1), bty="n", col=c("#202020", "#193fff", "#e9e9e9"))
+title(ylab="Actual death (proportion)", line=2.3, cex.lab=1.2)
+title(xlab="Predicted death (proportion)", line=2.3, cex.lab=1.2)
+title(main="Predicted 2 year survival", line=.9, cex.lab=1.2)
+
+
+
+####Creating Nomogram for survival####
+phmodel <- cph(formula = opsccsurv ~ GARD, # + 
+                 # Age.Diag + 
+                 # Sex + 
+                 # KPS_adj + 
+                 # CCI_adj + 
+                 # Overall.Stage +
+                 # Post.Rad.Chemo, 
+               data=data_valid, x = TRUE, y = TRUE, surv = TRUE, 
+               time.inc = 5*12)
+
+surv<-Survival(phmodel)
+
+#Creating nomogram predictions for 1, 2, 5, and 8 years
+surv1<-function(x) surv(1*12,lp=x)
+surv2<-function(x) surv(2*12,lp=x)
+surv5<-function(x) surv(5*12,lp=x)
+# surv8<-function(x) surv(8*365.25,lp=x)
+
+#Convert days into years
+quan<-Quantile(phmodel)
+med<-function(x) quan(lp=x)/12
+ss<-c(.05,.1,.2,.3,.4,.5,.6,.7,.8,.9,.95)
+
+nom <- nomogram(phmodel,fun=list(surv1, surv2, surv5, med), 
+                lp = FALSE,
+                funlabel=c('1-year Survival','2-year Survival',
+                           '5-year Survival', 'Median Survival (Years)'),
+                fun.at=list(ss, ss, ss, ss, c(0, .5 ,1:5)))
+names(nom) <- c("GARD") # c("GARD", "Age", "Sex", "KPS", 
+                # "CCI", "Overall Stage", "Post Radiation Chemo", 
+                # "total.points", '1-year Survival','2-year Survival',
+                # '5-year Survival', '8-year Survival', 
+                # 'Median Survival (Years)')
+
+#Nomogram image
+#You may need to mess with the directory to set the 
+plot(nom, cex.var=1, cex.axis=.75, lmgp=.25)
+# this works with just plot(nom)
+
+###More Detailed Nomogram to Turn Into Excel Sheet##
+#This part of the code generates an excel sheet to be used in the RShiny
+ss_d<- seq(0, 1, .01) 
+ssm_d<-seq(0, 8, .01) 
+nom_d <- nomogram(phmodel,fun=list(surv1, surv2, surv5, med), 
+                  lp = FALSE,
+                  funlabel=c('1-year Survival','2-year Survival',
+                             '5-year Survival', 'Median Survival'),
+                  fun.at=list(ss_d, ss_d, ss_d, ss_d, ssm_d))
+names(nom_d) <- c("PHOM Score", "Age", "Sex", "KPS", 
+                  "CCI", "Overall Stage", "Post Radiation Chemo", 
+                  "total.points", '1-year Survival','2-year Survival',
+                  '5-year Survival', '8-year Survival', 
+                  'Median Survival')
+
+#Gathering all the Points
+point_risks <- rbind(
+  cbind.data.frame(predictor = "PHOM Score", 
+                   value = nom_d$`PHOM Score`$raw.1st.dim0.mean,
+                   points = nom_d$`PHOM Score`$points),
+  
+  cbind.data.frame(predictor = "Age", 
+                   value = nom_d$Age$Age.Diag,
+                   points = nom_d$Age$points),
+  
+  cbind.data.frame(predictor = "Sex", 
+                   value = nom_d$Sex$Sex,
+                   points = nom_d$Sex$points),
+  
+  cbind.data.frame(predictor = "KPS", 
+                   value = nom_d$KPS$KPS_adj,
+                   points = nom_d$KPS$points),
+  
+  cbind.data.frame(predictor = "CCI", 
+                   value = nom_d$CCI$CCI_adj,
+                   points = nom_d$CCI$points),
+  
+  cbind.data.frame(predictor = "Overall Stage", 
+                   value = nom_d$`Overall Stage`$Overall.Stage,
+                   points = nom_d$`Overall Stage`$points),
+  
+  cbind.data.frame(predictor = "Post Radiation Chemo", 
+                   value = nom_d$`Post Radiation Chemo`$Post.Rad.Chemo,
+                   points = nom_d$`Post Radiation Chemo`$points)
+  
+)
+
+one_year_dat <- cbind.data.frame(
+  length = "1 year",
+  points = nom_d$`1-year Survival`$x,
+  prob = nom_d$`1-year Survival`$x.real
+)
+
+two_year_dat <- cbind.data.frame(
+  length = "2 year",
+  points = nom_d$`2-year Survival`$x,
+  prob = nom_d$`2-year Survival`$x.real
+)
+
+five_year_dat <- cbind.data.frame(
+  length = "5 year",
+  points = nom_d$`5-year Survival`$x,
+  prob = nom_d$`5-year Survival`$x.real
+)
+
+med_surv <- cbind.data.frame(
+  length = "med",
+  points = nom_d$`Median Survival`$x,
+  prob = nom_d$`Median Survival`$x.real
+)
+
+#Rounding Point_Risk to single digits for simplicity
+point_risks$points <- point_risks$points %>% round(0)
+
+#The max number of points is 231, so we need to make a dataframe with 232 rows
+max_points <- point_risks %>% group_by(predictor) %>% 
+  dplyr::summarise(max = max(points)) %>% 
+  select(max) %>% sum()
+
+#Creating a final tally matrix to make a csv out of
+mat_fin <- matrix(nrow = max_points + 1, ncol = 6)
+colnames(mat_fin) <- c("Points", "1 Year Survival", "2 Year Survival",
+                       "5 Year Survival", "8 Year Survival", "Median Survival")
+
+#Adding the Points to this matrix
+mat_fin[, "Points"] <- 0:max_points
+
+#Adding 1 year survival to this table
+for (i in 1:nrow(mat_fin)) {
+  #Gets the point of interest
+  point <- mat_fin[i, "Points"]
+  
+  #Gets the index of which point value is closes
+  ind <- which(abs(one_year_dat$points-point)==min(abs(one_year_dat$points-point)))
+  
+  #Gets the probability of the point and adds it to the table
+  mat_fin[i, "1 Year Survival"] <- one_year_dat$prob[ind]
+}
+
+#Adding 2 year survival to this table
+for (i in 1:nrow(mat_fin)) {
+  #Gets the point of interest
+  point <- mat_fin[i, "Points"]
+  
+  #Gets the index of which point value is closes
+  ind <- which(abs(two_year_dat$points-point)==min(abs(two_year_dat$points-point)))
+  
+  #Gets the probability of the point and adds it to the table
+  mat_fin[i, "2 Year Survival"] <- two_year_dat$prob[ind]
+}
+
+#Adding 5 year survival to this table
+for (i in 1:nrow(mat_fin)) {
+  #Gets the point of interest
+  point <- mat_fin[i, "Points"]
+  
+  #Gets the index of which point value is closes
+  ind <- which(abs(five_year_dat$points-point)==min(abs(five_year_dat$points-point)))
+  
+  #Gets the probability of the point and adds it to the table
+  mat_fin[i, "5 Year Survival"] <- five_year_dat$prob[ind]
+}
+
+#Adding 8 year survival to this table
+for (i in 1:nrow(mat_fin)) {
+  #Gets the point of interest
+  point <- mat_fin[i, "Points"]
+  
+  #Gets the index of which point value is closes
+  ind <- which(abs(eight_year_dat$points-point)==min(abs(eight_year_dat$points-point)))
+  
+  #Gets the probability of the point and adds it to the table
+  mat_fin[i, "8 Year Survival"] <- eight_year_dat$prob[ind]
+}
+
+#Adding median survival to this table
+for (i in 1:nrow(mat_fin)) {
+  #Gets the point of interest
+  point <- mat_fin[i, "Points"]
+  
+  #Gets the index of which point value is closes
+  ind <- which(abs(med_surv$points-point)==min(abs(med_surv$points-point)))
+  
+  #Gets the probability of the point and adds it to the table
+  mat_fin[i, "Median Survival"] <- med_surv$prob[ind]
+}
+
+# #Writing these as csv's
+# #From here, you can generate rshiny from these files
+# #May need to mess around with directory
+# write.csv(mat_fin, "./NomApp/mat_fin.csv")
+# write.csv(point_risks, "./NomApp/point_risks.csv")
+
 
 ```
 
+```{r Geoff}
+# fig.width=6,fig.height=5
+# 
+# f_OS<-cph(Surv(Time_OS, Event_OS) ~ GARD, data = temp, x=T, y=T, surv=T)
+# 
+# for (g in seq(0,110,by=1)){
+#   for (t in c(0,1,2,3,4,5)){
+#     p_t<-Predict(f_OS, GARD=g,time=t)
+#     p_t<-data.frame(p_t)
+#     p_t$time<-t
+#     if (t==0){p_all<-p_t
+#     } else {p_all<-bind_rows(p_all,p_t)}
+#   }
+#   p_g<-p_all
+#   p_g$gard<-g
+#   if (
+#     g==0){p_final_OS<-p_g
+#     } else {p_final_OS<-bind_rows(p_final_OS,p_g)}
+# }
+# p_final_OS <- p_final_OS%>%mutate(cumhaz=-log(yhat))
+# 
+# ss<-c(seq(0.05,.95,by=.05))
+# time_vals<-(seq(1,5,by=1))
+# time<-(seq(1,5,by=1))
+# # sites<-unique(data$Site)
+# # site<-unique(data$Site)
+# 
+# nom_OS<-expand_grid(ss,time)
+# nom_OS<-nom_OS%>%add_column('gard'=c(0))
+# 
+# for (t in time_vals){
+#   for (s in ss){
+#     gard_s <- p_final_OS%>%
+#       filter(time==t) %>% 
+#       filter(yhat>=s) %>% 
+#       slice(1) %>% pull(gard)
+#     nom_OS<-nom_OS%>%mutate(gard=ifelse(ss==s & time==t,gard_s,gard))
+#   }
+# }
+# 
+# t_sites<-c(3,3,3,3,3)
+# names(t_sites)<-sites
+# n.plot.OS<-nom_OS
+# for (t_val in time_vals){
+#   # t_site<-t_sites[[val]]
+#   n.plot.OS<-n.plot.OS %>% filter( time==t_val )
+# }
+# n.plot.OS<-n.plot.OS%>%filter(gard>0)
+# 
+# gg_nom_OS<-ggplot(n.plot.OS) +
+#   geom_point(aes(x=gard,y=time_vals)) + 
+#   geom_hline(yintercept=site) +
+#   geom_text(aes(x=gard,y=site,label=ss),nudge_y = .4,size=3) + 
+#   scale_x_continuous(limits=c(0,xmax), expand=expansion(mult=0,add=1)) + 
+#   scale_y_discrete(limits=rev(sites)) +
+#   theme_classic() + 
+#   theme(axis.line.x = element_blank(),
+#         axis.ticks.x = element_blank(),
+#         axis.text.x = element_blank(),
+#         axis.text.y = element_text(angle = 40,size=8),
+#         axis.title = element_blank(), plot.margin = margin(l=6,r=12,b=12,t=8,unit="pt"))
+
+# grid.arrange(gg_RH_OS,gg_nom_OS, nrow=2, heights=c(4,1.5))
+
+# grob_surv<-arrangeGrob(gg_RH_OS,gg_nom_OS, nrow=2, heights=c(4,1.5))
+
+```
+
+# KM curves + cutpoint
+```{r overall and stratified OS}
+
+
+# overall KM
+ggsurvplot(fit=survfit(Surv(Time_OS, Event_OS) ~ 1, data=temp),
+           xlab = "Time (months)", xlim = c(0, 60), break.time.by = 12, 
+           conf.int=FALSE, risk.table=TRUE, 
+           # surv.plot.height = 2.5, 
+           # surv.table.height = 1,
+           ggtheme = theme(aspect.ratio = 0.5),
+           tables.theme =  theme(aspect.ratio = 0.06),
+           title = "Overall Survival"
+           )
+
+
+# temp <- temp1 %>%
+#   filter(TNM == 1)
+
+midpt = trunc(10*median(temp$GARD))/10
+temp[temp$GARD >= midpt, ][, "GARD_dichotomic"] <- "High GARD"
+temp[temp$GARD < midpt, ][, "GARD_dichotomic"] <- "Low GARD"
+
+# stratified by median GARD
+gard_fit <- survfit(Surv(Time_OS, Event_OS) ~ GARD_dichotomic, data=temp)
+lab = paste("Median GARD: ",midpt)
+ggsurvplot(gard_fit, 
+           data = temp, 
+           xlab = "Time (months)", xlim = c(0, 60), break.time.by = 12, 
+           title = lab,
+           # legend.labs = c("High GARD", "Low GARD"),
+           pval=TRUE, conf.int=FALSE, risk.table=TRUE, 
+           # surv.plot.height = 2.5, 
+           ggtheme = theme(aspect.ratio = 0.5),
+           tables.theme =  theme(aspect.ratio = 0.06),
+           fontsize=2)
+
+# stratified by TNM
+tnm_fit <- survfit(Surv(Time_OS, Event_OS) ~ TNM8, data=temp)
+ggsurvplot(tnm_fit, 
+           data = temp, 
+           xlab = "Time (months)", xlim = c(0, 60), break.time.by = 12, 
+           # title = "OS stratified by TNM stage",
+           # legend.labs = c("Stage I and II", "Stage III"),
+           pval=TRUE, conf.int=FALSE, risk.table=TRUE, 
+           # surv.plot.height = 2.5, 
+           ggtheme = theme(aspect.ratio = 0.5),
+           tables.theme =  theme(aspect.ratio = 0.05),
+           fontsize=2)
+
+# # 6 subgroups
+# temp$subgroup <- rep(0, nrow(temp))
+# temp[(temp$GARD >= midpt) & (temp$TNM8 == "I"), ][, "subgroup"] <- "High, I"
+# temp[(temp$GARD >= midpt) & (temp$TNM8 == "II"), ][, "subgroup"] <- "High, II"
+# temp[(temp$GARD >= midpt) & (temp$TNM8 == "III"), ][, "subgroup"] <- "High, III"
+# temp[(temp$GARD <= midpt) & (temp$TNM8 == "I"), ][, "subgroup"] <- "Low, I"
+# temp[(temp$GARD <= midpt) & (temp$TNM8 == "II"), ][, "subgroup"] <- "Low, II"
+# temp[(temp$GARD <= midpt) & (temp$TNM8 == "III"), ][, "subgroup"] <- "Low, III"
+# 
+# subgroup_fit <- survfit(Surv(Time_OS, Event_OS) ~ subgroup, data=temp)
+# ggsurvplot(subgroup_fit, 
+#            data = temp, 
+#            xlab = "Time (months)", xlim = c(0, 60), break.time.by = 12, 
+#            title = "OS stratified by GARD and TNM",
+#            # legend.labs = c("Stage I and II", "Stage III"),
+#            pval=TRUE, conf.int=FALSE, risk.table=TRUE, 
+#            surv.plot.height = 0.5,
+#            ggtheme = theme(aspect.ratio = 0.4),
+#            tables.theme =  theme(aspect.ratio = 0.09),
+#            fontsize=2)
+
+
+```
+
+``` {r overall and stratified DSS}
+# primary disease KM
+ggsurvplot(fit=survfit(Surv(Time_OS, cancer_death) ~ 1, data=temp),
+           xlab = "Time (months)", xlim = c(0, 60), break.time.by = 12, 
+           conf.int=FALSE, risk.table=TRUE, 
+           # surv.plot.height = 2.5, 
+           # surv.table.height = 1,
+           ggtheme = theme(aspect.ratio = 0.5),
+           tables.theme =  theme(aspect.ratio = 0.06),
+           title = "Disease-Specific Survival"
+           )
+
+
+# temp <- temp1 %>%
+#   filter(TNM == 3) 
+# 
+# midpt = trunc(10*median(temp$GARD))/10
+# temp[temp$GARD >= midpt, ][, "GARD_dichotomic"] <- "High GARD"
+# temp[temp$GARD < midpt, ][, "GARD_dichotomic"] <- "Low GARD"
+
+
+# stratified by median GARD
+gard_primary <- survfit(Surv(Time_OS, cancer_death) ~ GARD_dichotomic, data=temp)
+lab = paste("Stage III, Median GARD: ",toString(midpt))
+ggsurvplot(gard_primary, 
+           data = temp, 
+           xlab = "Time (months)", xlim = c(0, 60), break.time.by = 12, 
+           title = lab,
+           # legend.labs = c("GARD < median", "GARD > median"),
+           pval=TRUE, conf.int=FALSE, risk.table=TRUE, 
+           # surv.plot.height = 2.5, 
+           ggtheme = theme(aspect.ratio = 0.5),
+           tables.theme =  theme(aspect.ratio = 0.05),
+           fontsize=2)
+
+# stratified by TNM
+tnm_primary <- survfit(Surv(Time_OS, cancer_death) ~ TNM8, data=temp)
+ggsurvplot(tnm_primary, 
+           data = temp, 
+           xlab = "Time (months)", xlim = c(0, 60), break.time.by = 12, 
+           # title = "OS stratified by TNM stage",
+           # legend.labs = c("Stage I and II", "Stage III"),
+           pval=TRUE, conf.int=FALSE, risk.table=TRUE, 
+           ggtheme = theme(aspect.ratio = 0.5),
+           tables.theme =  theme(aspect.ratio = 0.08))
+
+
+# 6 subgroups
+temp$subgroup <- rep(0, nrow(temp))
+temp[(temp$GARD >= midpt) & (temp$TNM8 == "I"), ][, "subgroup"] <- "High, I"
+temp[(temp$GARD >= midpt) & (temp$TNM8 == "II"), ][, "subgroup"] <- "High, II"
+temp[(temp$GARD >= midpt) & (temp$TNM8 == "III"), ][, "subgroup"] <- "High, III"
+temp[(temp$GARD <= midpt) & (temp$TNM8 == "I"), ][, "subgroup"] <- "Low, I"
+temp[(temp$GARD <= midpt) & (temp$TNM8 == "II"), ][, "subgroup"] <- "Low, II"
+temp[(temp$GARD <= midpt) & (temp$TNM8 == "III"), ][, "subgroup"] <- "Low, III"
+
+subgroup_fit <- survfit(Surv(Time_OS, Event_OS) ~ subgroup, data=temp)
+ggsurvplot(subgroup_fit,
+           data = temp,
+           xlab = "Time (months)", xlim = c(0, 60), break.time.by = 12,
+           title = "OS stratified by GARD and TNM",
+           # legend.labs = c("Stage I and II", "Stage III"),
+           pval=TRUE, conf.int=FALSE, risk.table=TRUE,
+           surv.plot.height = 0.5,
+           ggtheme = theme(aspect.ratio = 0.4),
+           tables.theme =  theme(aspect.ratio = 0.09),
+           fontsize=2)
+```
+
+
+
+# CutpointR
+``` {r}
+library(cutpointr)
+
+cp <- cutpointr(temp, GARD, Event_OS, direction="<=")
+summary(cp)
+```
+
+# Optimal 2 cutpoint analysis
 ```{r 2 cutpoints packages}
 library(here)
 library(survival)
@@ -143,26 +786,21 @@ library(stringr)
 library(tidyverse)
 ```
 
-# Load data and survival function
-First we'll load the expression data from the `GSE48276` dataset. 
 ```{r load_data}
 
-temp <- read.csv(file="GARD_HPVpos2.csv")
+# temp <- read.csv(file="GARD_HPVpos2.csv")
 # temp2 <- read.csv(file="NKI_HN2.csv")
 #in Jess's version, this column is predicted from the surv_os thing
 temp$pred_lp <- temp$GARD
 
 #not really sure if this is relevant bc Jess's version uses it to make the pred_lp column
 surv_os <- Surv(time = temp$Time_OS, event = temp$Event_OS)
+surv_dss <- Surv(time = temp$Time_OS, event = temp$cancer_death)
 # surv <- Surv(time = temp$Time, event = temp$Event) 
 
 ```
 
-# Optimal Cutpoint Analysis
-## Find optimal cutpoints
-Next, we'll find sweep all cutpoint options to find the optimal cutpoint for three (`sweep_cutpoints2`) groups. 
 ```{r load_results}
-
 sweep_cutpoints2 <- function(tidy_data, surv_obj){
    cutpoints_first = quantile(tidy_data$pred_lp, prob = seq(0, 1, 0.01))[-(1:5)]
    cutpoints_first = cutpoints_first[-(96:101)]
@@ -203,20 +841,19 @@ sweep_cutpoints2 <- function(tidy_data, surv_obj){
       ungroup()
 }
 
-# cutpoints <- sweep_cutpoints2(temp, surv_os)
-cutpoints <- sweep_cutpoints2(temp, surv)
-
-cutpoints_filtered <- cutpoints %>%
-  filter(min_n >= 10) %>% #require at least 4 samples in each group
-  filter(chisq > 10) %>% # == max(chisq)   #cutpoints with the highest chisq result
-  filter(cutdiff >= 10)
+cutpoints <- sweep_cutpoints2(temp, surv_os)
+# cutpoints <- sweep_cutpoints2(temp, surv_dss)
+# cutpoints <- sweep_cutpoints2(temp, surv)
 
 ```
 
-
-## Classify predictions
-Now, we'll classify each of our samples as high, medium, or low. 
 ```{r classify predictions}
+
+cutpoints_filtered <- cutpoints %>%
+  filter(min_n >= 10) %>% #require at least 4 samples in each group
+  filter(chisq > 15) %>% # == max(chisq)   #cutpoints with the highest chisq result
+  filter(cutdiff >= 10)
+
 df <- cutpoints_filtered[order(-cutpoints_filtered$chisq),]
 
 # they all cut the data with the same samples in each group
@@ -225,9 +862,9 @@ rank <- 1
 double_cutpoint_best <- c(cut1 = df[rank, ]$cutpoint1, 
                           cut2 = df[rank, ]$cutpoint2)
 
-lab1 = paste("GARD <",toString(trunc(10*df[rank, ]$cutpoint1)/10))
-lab2 = paste("GARD ",toString(trunc(10*df[rank, ]$cutpoint1)/10),"-",toString(trunc(10*df[rank, ]$cutpoint2)/10))
-lab3 = paste("GARD >",toString(trunc(10*df[rank, ]$cutpoint2)/10))
+lab1 = paste("GARD <",toString(round(10*df[rank, ]$cutpoint1)/10))
+lab2 = paste("GARD ",toString(round(10*df[rank, ]$cutpoint1)/10),"-",toString(round(10*df[rank, ]$cutpoint2)/10))
+lab3 = paste("GARD >",toString(round(10*df[rank, ]$cutpoint2)/10))
 
 temp <- temp %>%
       mutate(
@@ -247,8 +884,6 @@ temp <- temp %>%
 
 ```
 
-
-## Plot Results
 ```{r Tertiles by 33%}
 km_tert_by33 <- survfit(surv_os ~ temp$pred_3grp_tert)
 
@@ -260,8 +895,8 @@ gg_grp3_tert <- ggsurvplot(km_tert_by33, data = temp, size = 1,
    risk.table.y.text.col = T, # show colors in table listing
    ncensor.plot = FALSE,
    ncensor.plot.height = 0.25,
-   xlab = "Time in months", # adjust X axis label
-   xlim = c(0, 125),
+   xlab = "Time (months)", # adjust X axis label
+   xlim = c(0, 60),
    break.time.by = 12, # break X axis in time intervals
    legend.labs = c("Low GARD", "Middle GARD", "High GARD"),
    title = "OPSCC grouped by GARD tertile 33/33/33",
@@ -282,8 +917,8 @@ gg_grp3_2550 <- ggsurvplot(km_tert_by25_50_25, data = temp, size = 1,
    risk.table.y.text.col = T, # show colors in table listing
    ncensor.plot = FALSE,
    ncensor.plot.height = 0.25,
-   xlab = "Time in months", # adjust X axis label
-   xlim = c(0, 125),
+   xlab = "Time (months)", # adjust X axis label
+   xlim = c(0, 60),
    break.time.by = 12, # break X axis in time intervals
    legend.labs = c("Low GARD", "Middle GARD", "High GARD"),
    title = "OPSCC grouped by GARD, 25/50/25",
@@ -294,54 +929,158 @@ gg_grp3_2550
 ```
 
 ```{r Optimal 3 group cutpoints}
+
+# MAKE SURE TO CHANGE THIS BTW OS AND DSS
 km_tert_opt <- survfit(surv_os ~ temp$pred_3grp_optimal)
 
-gg_grp3_opt <- ggsurvplot(km_tert_opt, data = temp, size = 1,
-   conf.int = FALSE, # Add confidence interval
-   pval = TRUE, # Add p-value
+#gg_grp3_opt <- 
+ggsurvplot(km_tert_opt, data = temp, size = 1,
+   # conf.int = TRUE, # Add confidence interval
+   # pval = TRUE, # Add p-value
    risk.table = TRUE, # Add risk table
    risk.table.height = 0.25, # change if you have >2 groups
    risk.table.y.text.col = T, # show colors in table listing
    ncensor.plot = FALSE,
    ncensor.plot.height = 0.25,
-   xlab = "Time in months", # adjust X axis label
-   xlim = c(0, 125),
+   xlab = "Time (months)", # adjust X axis label
+   xlim = c(0, 60),
    break.time.by = 12, # break X axis in time intervals
    legend.labs = c(lab1, lab2, lab3), #c("Low GARD", "Middle GARD", "High GARD"),
-   title = "HNSCC grouped by GARD tertile (optimal)",
-   ggtheme = theme_bw() + theme(plot.title = element_text(hjust = 0.5))
+   title = "OS grouped by GARD tertile (optimal)",
+   ggtheme = theme_bw() + theme(plot.title = element_text(hjust = 0.5)),
+   fontsize=3
    )
+# gg_grp3_opt
 
-gg_grp3_opt
 
+# fit1 <- cuminc(ftime = temp$Time_OS, fstatus = temp$Cause_of_Death, group=temp$pred_3grp_optimal)
+# # names(fit1) <- c("Malignant disease under study/complication", "Second primary malignant disease/complication", "Unknown cause", "Adverse event")
+# names(fit1) <- c("Malignant_disease_or_complication", "Second_primary_or_complication", "Unknown_cause", "Adverse_event")
+# plot(fit1, main="Cause-Specific Death", xlab = "Time (months)", xlim = c(0, 60), break.time.by = 12)
+# 
+# ggcompetingrisks(fit1, main="Cause-Specific Death", xlab = "Time (months)", xlim = c(0, 60),
+#                  break.time.by = 12, 
+#                  legend = "right",
+#                  ggtheme = theme_classic(), multiple_panels = FALSE, conf.int = FALSE)
 
-surv <- Surv(time = temp2$Time, event = temp2$Event) 
-temp2$pred_3grp_optimal <-'3_High'
-temp2$pred_3grp_optimal[temp2$GARD<double_cutpoint_best[2]] <- '2_Middle'
-temp2$pred_3grp_optimal[temp2$GARD<double_cutpoint_best[1]] <- '1_Low'
+# library(hrbrthemes)
+# temp$TNM <- rep(0, nrow(temp))
+# temp[temp$TNM8 == 'I',][, "TNM"] <- 1
+# temp[temp$TNM8 == 'II',][, "TNM"] <- 2
+# temp[temp$TNM8 == 'III',][, "TNM"] <- 3
+# 
+# p <- temp %>%
+#   ggplot(aes(x=TNM, fill=pred_3grp_optimal)) +
+#     geom_histogram( color="#e9ecef", alpha=0.6, stat='count', position = 'identity') +
+#     # scale_fill_manual(values=c("#69b3a2", "#404080")) +
+#     theme_ipsum() +
+#     labs(fill="")
+# p
 
-km_tert_opt2 <- survfit(surv ~ temp2$pred_3grp_optimal)
-
-gg_grp3_opt2 <- ggsurvplot(km_tert_opt2, data = temp2, size = 1,
-   conf.int = FALSE, # Add confidence interval
-   pval = TRUE, # Add p-value
-   risk.table = TRUE, # Add risk table
-   risk.table.height = 0.25, # change if you have >2 groups
-   risk.table.y.text.col = T, # show colors in table listing
-   ncensor.plot = FALSE,
-   ncensor.plot.height = 0.25,
-   xlab = "Time in months", # adjust X axis label
-   xlim = c(0, 10),
-   break.time.by = 1, # break X axis in time intervals
-   legend.labs = c(lab2, lab3), #c("Low GARD", "Middle GARD", "High GARD"),
-   title = "HNSCC grouped by GARD tertile (optimal)",
-   ggtheme = theme_bw() + theme(plot.title = element_text(hjust = 0.5))
-   )
-gg_grp3_opt2
+# for combined with NKI?
+# surv <- Surv(time = temp2$Time, event = temp2$Event) 
+# temp2$pred_3grp_optimal <-'3_High'
+# temp2$pred_3grp_optimal[temp2$GARD<double_cutpoint_best[2]] <- '2_Middle'
+# temp2$pred_3grp_optimal[temp2$GARD<double_cutpoint_best[1]] <- '1_Low'
+# 
+# km_tert_opt2 <- survfit(surv ~ temp2$pred_3grp_optimal)
+# 
+# gg_grp3_opt2 <- ggsurvplot(km_tert_opt2, data = temp2, size = 1,
+#    conf.int = FALSE, # Add confidence interval
+#    pval = TRUE, # Add p-value
+#    risk.table = TRUE, # Add risk table
+#    risk.table.height = 0.25, # change if you have >2 groups
+#    risk.table.y.text.col = T, # show colors in table listing
+#    ncensor.plot = FALSE,
+#    ncensor.plot.height = 0.25,
+#    xlab = "Time (months)", # adjust X axis label
+#    xlim = c(0, 10),
+#    break.time.by = 1, # break X axis in time intervals
+#    legend.labs = c(lab2, lab3), #c("Low GARD", "Middle GARD", "High GARD"),
+#    title = "HNSCC grouped by GARD tertile (optimal)",
+#    ggtheme = theme_bw() + theme(plot.title = element_text(hjust = 0.5))
+#    )
+# gg_grp3_opt2
 
 ```
 
 
+
+
+# Disease-specific death cuminc
+``` {r}
+
+library(rms)
+library(cmprsk)
+library(rstatix)
+library(tidyverse)
+library(ggplotify)
+library(rstatix)
+library(ggfortify)
+library(survminer)
+library(knitr)
+
+
+# # 6 subgroups
+# temp$subgroup <- rep(0, nrow(temp))
+# temp[(temp$GARD >= midpt) & (temp$TNM8 == "I"), ][, "subgroup"] <- "High, I"
+# temp[(temp$GARD >= midpt) & (temp$TNM8 == "II"), ][, "subgroup"] <- "High, II"
+# temp[(temp$GARD >= midpt) & (temp$TNM8 == "III"), ][, "subgroup"] <- "High, III"
+# temp[(temp$GARD <= midpt) & (temp$TNM8 == "I"), ][, "subgroup"] <- "Low, I"
+# temp[(temp$GARD <= midpt) & (temp$TNM8 == "II"), ][, "subgroup"] <- "Low, II"
+# temp[(temp$GARD <= midpt) & (temp$TNM8 == "III"), ][, "subgroup"] <- "Low, III"
+
+#Competing Risks Cumulative Incidence, test statistics Gray's Test (?)
+#cause of death - 1 (Malignant disease under study, or complication due to malignant disease under study), 2 (Second primary malignant disease, or complication due to second primary malignant disease), 3 (Unknown cause (not assessable or insufficient data)), 4 (Adverse event (not otherwise specified))
+fit3 <- cuminc(ftime = temp$Time_OS, fstatus = temp$Event_OS, group=temp$pred_3grp_optimal) # either status is cause of death, or it's event and then group by pred_3grp_optimal
+# names(fit3) <- c("Malignant_disease_or_complication", "Second_primary_or_complication", "Unknown_cause") #c(lab1, lab2, lab3) #
+plot(fit3, main="OS grouped by optimal tertile", xlab = "Time (months)", xlim=c(0,60), ylim=c(0,0.6)) #All Death by Cause
+
+ggcompetingrisks(fit3, palette = "Dark2", main="Disease-Specific Death", xlab = "Time (months)", xlim = c(0, 60),
+                 break.time.by = 12, 
+                 legend = "right",
+                 ggtheme = theme_classic(), multiple_panels = FALSE)
+
+```
+
+``` {r Eashwar's code}
+#The ggsep should be set to "_" if that's the symbol you used in labeling the plot
+CI_curve <- ggcompetingrisks(fit3, 
+                             legend = "right",
+                             gsep = "_",
+                             ggtheme = theme_classic(), multiple_panels = FALSE) + 
+  # scale_color_manual(values = c("#C72006", "#7000B9", "#2980b9","#10ac84") + #Do this to choose the color for your cause of death" #2980b9","#10ac84","#8e44ad","#7f8c8d","#34495e","#b71c1c",
+  # scale_linetype_manual(values = c("solid", "dashed")) + #Do this to choose the line type for the strata
+  linetype=c("strata") +
+  theme(legend.justification=c(1,1), legend.position=c(1,.88),
+        plot.title = element_text(hjust = 0.5, size = 20, family = "Arial", color = "#393D3F"),
+        axis.line = element_line(size = 1, color = "#393D3F"),
+        axis.ticks = element_line(color = "#393D3F"),
+        legend.text = element_text(size = 12, family = "Arial", color = "#393D3F"),
+        legend.title = element_text(size = 14, family = "Arial", color = "#393D3F"),
+        axis.text.x = element_text(size = 16, family = "Arial", color = "#393D3F"),
+        axis.text.y = element_text(size = 16, family = "Arial", color = "#393D3F"),
+        axis.title = element_text(size = 16, family = "Arial", color = "#393D3F"),
+        panel.background = element_rect(fill = "transparent", color = NA),
+        plot.background = element_rect(fill = "transparent", color = NA),
+        legend.background = element_rect(fill = "transparent", color = NA)) # + 
+  # labs(title = "Cumulative Incidence by Persistent Homology (PHOM) Score", x = "Days from Start of Treatment", 
+       # y = "Probability of Death", color = "Cause of Death", linetype = "PHOM Score Group") + 
+  # guides(colour = guide_legend(override.aes = list(shape = 15)))
+CI_curve
+
+ggcompetingrisks(fit3, palette = "Dark2",
+                 legend = "right",
+                 gsep = "_",
+                 ggtheme = theme_classic(), multiple_panels = TRUE, conf.int = TRUE) #Same plot, but separates cause of death into different panels
+
+print(fit3) #Prints the raw stats
+#Example for getting confidence interval
+#95% Confidence interval for incidence at 2000 day mark for cancer death, low phom
+cbind(`2000CancerLow` = 0.1856857, low = 0.1856857 - 1.96*sqrt(0.0003993450), 
+      high = 0.1856857 + 1.96*sqrt(0.0003993450))
+
+```
 
 # Dose-GARD Distribution Comparison
 ```{r}
@@ -410,49 +1149,15 @@ tdplot / gardplot
 
 ```
 
-# Cox plot
+
+
+# Kruskal-Wallis GARD distribution comparison 
 ```{r}
-library(rms)
-# replace data file with new one
-data<-read.csv(file = "NKI_HN.csv")
-# data<-select(data, Source,RSI,GARD,Time,Event)
-  # dplyr::select(data, Source_Site, Source, Site, Cohort, RSI, GARD, Time, Event, TD, Received_RT) %>%
-f<-cph(Surv(Time, Event) ~ GARD, data=data, x=T, y=T, surv = T)
-p<-Predict(f, GARD = seq(1,80,by=1))
-p<-data.frame(p)
-# stats_HN <- summary.fit(f) 
-#   rename('chi-sq' = chisq) %>%
-  
-ggplot(p) + geom_line(aes(x=GARD,y=yhat),color = 'red') +
-geom_abline(intercept=0, slope=0) +
-geom_ribbon(aes(x=GARD,ymax=upper,ymin=lower,fill = 'red'), alpha=.2) + 
-scale_x_continuous(expand = expansion(mult=0, add=0)) +
-# facet_wrap(~Outcome, nrow = 1) +
-xlab("GARD") + 
-ylab("log Relative Hazard") +
-theme_classic() +
-theme(panel.border = element_rect(fill = rgb(1,1,1,0),size = .75)) # +
-# geom_label(data = stats_HN,
-#            fill = rgb(.5,.5,.5,.1), hjust="left",
-#            size=2.4, label.r = unit(2,"points"),
-#            label.size = 0, show.legend = FALSE,
-#            aes(label = sprintf("Coef = %s \nChi-Sq = %s \nP = %.4f", coef, chisq, p), x=30, y=-2))
-
-# fit<-cph(Surv(Time, Event) ~ rcs(GARD,3), data=data, x=T, y=T)
-# fit.rcs<-fit
-#stats_rec_rcs<-c(c(anova(fit)[c(1,3,4),1]),c(anova(fit)[c(1,3,4),3]))
-
-# interaction_rec_rcs <- ggplot(p) + geom_line(aes(x=GARD,y=yhat,color=Received_RT), size=.4) +
-#   geom_ribbon(aes(x=GARD,ymin=lower,ymax=upper,fill=Received_RT),alpha=.2) +
-#   geom_vline(xintercept=cutpoint, size=.4, linetype='22') +
-#   scale_y_continuous(expand = expansion(mult=0,add=0), limits=c(-4,3)) +
-#   scale_x_continuous(expand = expansion(mult=0,add=0), 
-#                      # minor_breaks = c(seq(5,80,by=5)), 
-#                      limits = c(0,80)) + 
-#   ylab("log Relative Hazard (First Recurrence)") + xlab("GARD") + 
-#   theme_bw() +
-#   theme(legend.position = "left")
+kruskal.test(GARD ~ TNM8, data=temp1)
 ```
+
+# Python
+all of the below has been changed in python script
 
 ```{python}
 import numpy as np
@@ -468,7 +1173,6 @@ from matplotlib import collections as matcoll
 from scipy import stats 
 ```
 
-all of the below has been changed in python script
 ```{python}
 # should have RSI, n, d, Time, and Event columns
 df = pd.read_csv("GARD_HPVpos2.csv")
