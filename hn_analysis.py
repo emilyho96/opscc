@@ -12,6 +12,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
+from matplotlib.ticker import FuncFormatter
 from lifelines import KaplanMeierFitter
 from lifelines.statistics import logrank_test
 from lifelines import WeibullFitter
@@ -22,19 +23,19 @@ from scipy import stats
 # import rpy2.rinterface as rinterface
 
 
-df = pd.read_csv('GARD_HPVpos5.csv')
+df = pd.read_csv('GARD_HPVpos7.csv')
 # df['Source'] = 'Loris'
 # df = df.sort_values(by='GARD').reset_index().drop(columns=['index'])
 # df['cancer_death'] = 0
 # df.loc[df['Cause_of_Death']==1, 'cancer_death'] = 1
-df = df.loc[df['RT']=='definitive']
+temp = df.loc[df['RT']=='definitive']
 # df = df.drop(df[df['TD']<60].index)
 
-# df2 = pd.read_csv('NKI_HN2.csv')
-# df2['Source'] = 'NKI'
 
 # SOC range, cut
-cut = df['GARD'].median()
+cut = 64.185   # df['GARD'].median() # 
+tert_one = 46.1
+tert_two = 65
 
 # constants/calculations
 d = 2
@@ -43,18 +44,18 @@ n = 1
 
 ag = -np.log(df['RSI'])/(n*d)-beta*d
 df['alpha_g'] = ag
-d_c = df['GARD']/df['TD']/beta - ag/beta # dose/fx
-d_c = df['GARD']/df['TD']/beta + np.log(df['RSI'])/n/d/beta + d
-df['EQD2'] = df['TD'] * (d_c+10) / (d+10) # alpha/beta = 10
-# df['RxRSI'] = cut/(df['alpha_g']+beta*d)
+gard = df['n']*df['d_c']*(ag+beta*df['d_c'])
+df['GARD'] = gard
+df['EQD2'] = df['TD'] * (df['d_c']+10) / (d+10) # alpha/beta = 10
+df['RxRSI'] = cut/(df['alpha_g']+beta*d)
 
 
-# df.to_csv('/Users/Emily/Library/CloudStorage/Box-Box/CWRU/Research/MathOnc/opscc/GARD_HPVpos5.csv',index=False)
+# df.to_csv('/Users/Emily/Library/CloudStorage/Box-Box/CWRU/Research/MathOnc/opscc/formike.csv',index=False)
 
 
 # =============================================================================
 # # TD vs GARD boxplot
-# a = list(df['TD']) + list(df['GARD'])
+# a = list(df['TD']) + list(gard)
 # b = list(['TD']*len(df)) + list(['GARD']*len(df))
 # df2 = np.transpose(pd.DataFrame(data=[a,b]))
 # df2 = df2.rename(columns={0: "value", 1: "type"})
@@ -71,92 +72,102 @@ df['EQD2'] = df['TD'] * (d_c+10) / (d+10) # alpha/beta = 10
 
 
 # =============================================================================
-# # TD vs EQD boxplot
+# # GARD vs EQD boxplot
+# fig, (ax1, ax2) = plt.subplots(2, figsize=(7,5))
+# sns.boxplot(x=df['EQD2'], ax=ax1, color='white', showfliers= False)
+# sns.stripplot(x=df['EQD2'], ax=ax1, color=(0.2980392156862745, 0.4470588235294118, 0.6901960784313725))
+# ax1.set(xlim=(0,120))
+# sns.boxplot(x=df['GARD'], ax=ax2, color='white', showfliers= False)
+# sns.stripplot(x=df['GARD'], ax=ax2, color=(0.8666666666666667, 0.5176470588235295, 0.3215686274509804))
+# ax2.set(xlim=(0,120))
+# ax1.set(xlabel="EQD2 (Gy)")
+# ax2.set(xlabel="GARD")
+# fig.tight_layout()
+# 
+# 
+# # a = list(df['EQD2']) + list(df['GARD'])
+# # b = list(['EQD2']*len(df)) + list(['GARD']*len(df))
+# # df2 = np.transpose(pd.DataFrame(data=[a,b]))
+# # df2 = df2.rename(columns={0: "value", 1: "type"})
+# # f = plt.figure(figsize=(10,7))
+# # ax1 = f.add_subplot(1,1,1)
+# # ax1.set_xlim([0,110])
+# # ax2 = ax1.twiny()
+# # ax2.set_xlim([0,110])
+# 
+# # sns.set_style('white')
+# # sns.boxplot(data=df2, ax=ax1, x="value", color='white', y='type', showfliers= False)
+# # sns.stripplot(data=df2, ax=ax2, x="value", palette="deep", y="type")
+# # plt.xlim([0,110])
+# # plt.ylabel('')
+# # ax1.set_xlabel('Gy')
+# # ax2.set_xlabel('GARD')
+# # f.tight_layout()
+# # plt.show()
+# =============================================================================
+
+
+# =============================================================================
+# # RSI histogram
+# f2 = plt.figure(figsize=(7,5))
+# ax2 = f2.add_subplot(1,1,1)
+# sns.histplot(data=df, ax=ax2, stat="count", 
+#              x="RSI", kde=True,
+#              palette="deep", 
+#              element="bars", legend=False)
+# ax2.set_title("RSI Distribution")
+# ax2.set_xlabel("RSI")
+# ax2.set_ylabel("Count")
+# # f2.savefig('Figures/GARD_distribution')
+# 
+# 
+# # len(df[(df['RSI']<np.exp(-46.1/60*n*d)) & (df['RSI']>np.exp(-65/70*n*d))])/len(df)
+# =============================================================================
+
+
+# =============================================================================
+# # # joint plot
+# # 2 colors 
+# df['color'] = np.where(((df['EQD2'] >= 69) & (df['EQD2'] <= 71)), True, False)
+# f = sns.jointplot(data=df, x=df['EQD2'], y=df['GARD'], xlim=(30,80), ylim = (0,130), hue="color", legend=False)
+# f.set_axis_labels('EQD2 (Gy)', 'GARD', fontsize=14)
+# 
+# # one color
+# df["_"]=""
+# f = sns.jointplot(data=df, x=df['EQD2'], y=df['GARD'], xlim=(30,80), ylim=(0,130), hue="_")
+# f.set_axis_labels('EQD2 (Gy)', 'GARD', fontsize=14)
+# 
+# # GARD boxplot for EQD in 69-71
+# df_filt = df[((df['EQD2'] >= 69) & (df['EQD2'] <= 71))]
+# sns.set(rc={'figure.figsize':(1,7)})
+# sns.set_style(style='white')
+# ax1 = sns.boxplot(y=df_filt['GARD'], color='white', showfliers= False)
+# sns.stripplot(y=df_filt['GARD'], ax=ax1, color=(0.8666666666666667, 0.5176470588235295, 0.3215686274509804))
+# ax1.set(ylim=(0,130))
+# ax1.set(ylabel="")
+# ax1.set(title="EQD ~70 Gy \n")
+# =============================================================================
+
+
 # a = list(df['EQD2']) + list(df['GARD'])
 # b = list(['EQD2']*len(df)) + list(['GARD']*len(df))
 # df2 = np.transpose(pd.DataFrame(data=[a,b]))
 # df2 = df2.rename(columns={0: "value", 1: "type"})
-# f2 = plt.figure(figsize=(7,5))
-# ax2 = f2.add_subplot(1,1,1)
+# f = plt.figure(figsize=(10,7))
+# ax1 = f.add_subplot(1,1,1)
+# ax1.set_xlim([0,110])
+# ax2 = ax1.twiny()
+# ax2.set_xlim([0,110])
+
 # sns.set_style('white')
-# sns.boxplot(data=df2, ax=ax2, x="value", color='white', y='type', showfliers= False)
+# sns.boxplot(data=df2, ax=ax1, x="value", color='white', y='type', showfliers= False)
 # sns.stripplot(data=df2, ax=ax2, x="value", palette="deep", y="type")
-# # ax2.set_xscale('log')
 # plt.xlim([0,110])
 # plt.ylabel('')
+# ax1.set_xlabel('Gy')
+# ax2.set_xlabel('GARD')
+# f.tight_layout()
 # plt.show()
-# =============================================================================
-
-
-# =============================================================================
-# # GARD histogram
-# f2 = plt.figure(figsize=(7,5))
-# ax2 = f2.add_subplot(1,1,1)
-# sns.histplot(data=df, ax=ax2, stat="count", 
-#              x="GARD", kde=True,
-#              palette="deep", 
-#              element="bars", legend=False)
-# ax2.set_title("OPSCC GARD Distribution")
-# ax2.set_xlabel("GARD")
-# ax2.set_ylabel("Count")
-# # f2.savefig('Figures/GARD_distribution')
-# =============================================================================
-
-
-# =============================================================================
-# # comparing RSI distr from sources
-# temp = pd.concat([df,df2]).reset_index(drop=True)
-# test = stats.ks_2samp(temp[temp['Source']=='Loris']['RSI'],temp[temp['Source']=='NKI']['RSI'])
-# 
-# # hist version
-# f3 = plt.figure(figsize=(7,5))
-# ax3 = f3.add_subplot(1,1,1)
-# sns.histplot(data=temp, ax=ax3, stat="count", 
-#               x="RSI", kde=True,
-#               palette="deep", hue="Source",
-#               element="bars", legend=True)
-# ax3.set_title("RSI distribution comparison")
-# ax3.set_xlabel("RSI")
-# ax3.set_ylabel("")
-# plt.text(0.30,10,'KS p='+str(round(test[1],2)))
-# # kde version
-# fig = sns.kdeplot(data=temp, x='RSI', hue='Source', palette='Blues', fill=True, common_norm=False, alpha=.5, linewidth=0.1)
-# fig.set_yticklabels([])
-# fig.set_ylabel('')
-# plt.title('RSI distribution comparison')
-# =============================================================================
-
-
-# =============================================================================
-# # comparing GARD distr from sources
-# temp = pd.concat([df,df2]).reset_index(drop=True)
-# test = stats.ks_2samp(temp[temp['Source']=='Loris']['GARD'],temp[temp['Source']=='NKI']['GARD'])
-# 
-# # # kde version
-# # fig = sns.kdeplot(data=temp, x='GARD', hue='Source', palette='Blues', fill=True, common_norm=False, alpha=.5, linewidth=0.1)
-# # fig.set_yticklabels([])
-# # fig.set_ylabel('')
-# # plt.title('GARD distribution comparison')
-# # hist version
-# f3 = plt.figure(figsize=(7,5))
-# ax3 = f3.add_subplot(1,1,1)
-# sns.histplot(data=temp, ax=ax3, stat="count", 
-#               x="GARD", kde=True,
-#               palette="deep", hue="Source",
-#               element="bars", legend=True)
-# plt.title("GARD distribution comparison")
-# ax3.set_ylabel("")
-# ax3.set_yticklabels([])
-# plt.text(100,10,'KS p='+str(round(test[1],2)))
-# =============================================================================
-
-
-# =============================================================================
-# # joint plot
-# f5 = plt.figure(figsize=(7,5))
-# sns.jointplot(data=df, x=df['RSI'], y=df['GARD'])
-# =============================================================================
-
 
 # =============================================================================
 # # KDEs of GARD by TNM
@@ -213,6 +224,33 @@ df['EQD2'] = df['TD'] * (d_c+10) / (d+10) # alpha/beta = 10
 # fig=sns.boxplot(data=temp, x='GARD',y='pred_3grp_optimal', hue='TNM8') # 
 # sns.histplot(data=temp, x="pred_3grp_optimal", stat='density', shrink=0.8, hue='TNM8',multiple="dodge")
 # plt.title('TNM distribution grouped by GARD tertile')
+
+
+
+# =============================================================================
+# # KM plot stratified by TNM instead of GARD
+# temp = df[:]
+# 
+# tnmHigh = temp.loc[temp['TNM8'] == 'III']
+# tnmLow = temp.loc[temp['TNM8'] != 'III']
+# 
+# above = KaplanMeierFitter()
+# above.fit(tnmHigh['Time_OS'],tnmHigh['Event_OS'],label='Stage III')
+# below = KaplanMeierFitter()
+# below.fit(tnmLow['Time_OS'],tnmLow['Event_OS'],label='Stage I and II')
+# 
+# results = logrank_test(tnmHigh['Time_OS'],tnmLow['Time_OS'],event_observed_A=tnmHigh['Event_OS'], event_observed_B=tnmLow['Event_OS'])
+# p = round(results.p_value, 3)
+# 
+# fig4 = above.plot(ci_show=True)
+# below.plot(ax=fig4, ci_show=True)
+# plt.title('KM stratified by TNM')
+# label1 = 'p = '+str(p)
+# plt.text(0.1,0.1,label1)
+# plt.ylim([0,1.1])
+# plt.xlabel('Time (months)')
+# plt.ylabel('Event-free Survival')
+# =============================================================================
 
 # =============================================================================
 # temp = pd.read_csv('os_tert_opt.csv')
@@ -288,60 +326,16 @@ def KMbyGARD(time, event, sort, cut, show = False):
     return results, km_above, km_below
 
 
-
-# iterates thtrough GARD to minimize p-value
-# returns a 1-smaller list of p-values, ordered by GARD
-def findCut(time, event, gard, show = False):
-    
-    p = []
-    
-    for cut_val in gard:
-        
-        if cut_val == gard.max():
-            break
-        
-        results, _, _ = KMbyGARD(time, event, gard, cut_val)
-        p.append(results.p_value)
-        
-    if show == True:
-        
-        a1 = sns.scatterplot(x=gard[:-1], y=p)
-        a1.set_yscale('log')
-        plt.title("p-value vs GARD cut-point")
-    
-    return p, gard[:-1].tolist()
-
-
 # =============================================================================
-# # finding gard_t (cut) for cohorts
-# # first calcluate p for each cut
-# p_vals, gard = findCut(df['Time_OS'], df['Event_OS'], df['GARD'])
-# 
-# # use this section to fit a polynomial to estimate cut then manually enter value
-# coeff = np.polyfit(gard, p_vals, 6)
-# p = np.poly1d(coeff)
-# x = np.linspace(df['GARD'].min(), df['GARD'].max(), num=100)
-# y = p(x)
-# f4 = plt.figure()
-# plt.plot(x,y)
-# plt.scatter(gard,p_vals)
-# plt.xlabel('GARD cut-point')
-# plt.ylabel('p-value')
-# plt.ylim([-0.2,1.1])
-# # f4.savefig('Figures/p_cut')
-# =============================================================================
-
-
-# =============================================================================
-# results, a, b = KMbyGARD(df['Time_OS'], df['Event_OS'], df['GARD'], cut)
+# results, a, b = KMbyGARD(temp['Time_OS'], temp['Event_OS'], temp['GARD'], cut)
 # p = round(results.p_value,3)
 # 
 # plt.figure()
 # f5 = a.plot(color='blue', ci_show=True, label='Above '+str(cut))
 # b.plot(ax=f5, color='blue', linestyle='dashed', ci_show=True, label='Below '+str(cut))
 # plt.title('KM comparison for GARD cut')
-# # label1 = 'p = '+str(p)+'\nGARD cut: '+str(cut)
-# # plt.text(0.1,0.1,label1)
+# label1 = 'p = '+str(p)+'\nGARD cut: '+str(cut)
+# plt.text(0.1,0.1,label1)
 # plt.ylim([0,1.1])
 # plt.xlabel('Time (months)')
 # plt.ylabel('Event-free Survival')
@@ -349,211 +343,361 @@ def findCut(time, event, gard, show = False):
 # =============================================================================
 
 
-# =============================================================================
-# # KM plot stratified by TNM instead of GARD
-# temp = df[:]
-# 
-# tnmHigh = temp.loc[temp['TNM8'] == 'III']
-# tnmLow = temp.loc[temp['TNM8'] != 'III']
-# 
-# above = KaplanMeierFitter()
-# above.fit(tnmHigh['Time_OS'],tnmHigh['Event_OS'],label='Stage III')
-# below = KaplanMeierFitter()
-# below.fit(tnmLow['Time_OS'],tnmLow['Event_OS'],label='Stage I and II')
-# 
-# results = logrank_test(tnmHigh['Time_OS'],tnmLow['Time_OS'],event_observed_A=tnmHigh['Event_OS'], event_observed_B=tnmLow['Event_OS'])
-# p = round(results.p_value, 3)
-# 
-# fig4 = above.plot(ci_show=True)
-# below.plot(ax=fig4, ci_show=True)
-# plt.title('KM stratified by TNM')
-# label1 = 'p = '+str(p)
-# plt.text(0.1,0.1,label1)
-# plt.ylim([0,1.1])
-# plt.xlabel('Time (months)')
-# plt.ylabel('Event-free Survival')
-# =============================================================================
-
 
 # =============================================================================
-# # KM curve
-# km = KaplanMeierFitter()
-# km.fit(df['Time_OS'],df['Event_OS'])
-# # km2 = KaplanMeierFitter()
-# # km2.fit(df2['Time'],df2['Event'])
-# # km3 = KaplanMeierFitter()
-# # km3.fit(combdf['Time'],combdf['Event'])
-# plt.figure()
-# f3 = km.plot(linestyle='dashed', ci_show=True)
-# # km2.plot(ax=f3, linestyle='dashed', ci_show=False, label='Other')
-# # km3.plot(ax=f3, linestyle='dashed', ci_show=False, label='Combined')
-# plt.ylim([0,1])
-# plt.xlabel('Time (years)')
-# plt.title('Event-free Survival')
-# # plt.savefig('Figures/KM')
-# =============================================================================
-
-
-# =============================================================================
-# # this section is not necessary for analysis, so it only runs on original data
-# # weibull fits for event above and below cut
-# # overall event, not survival
-# h = df.loc[df['GARD'] > cut]
-# h['Time'].replace(0,0.001,inplace=True) # this gives a minor error but seems OK
+# # weibull fits for above and below cut based on DEFINITIVE
+# h = temp.loc[temp['GARD'] > cut]
 # s1 = WeibullFitter()
-# s1.fit(h['Time'],h['Event'])
-# l = df.loc[df['GARD'] <= cut]
-# l['Time'].replace(0,0.001,inplace=True)
+# s1.fit(h['Time_OS'],h['Event_OS'])
+# l = temp.loc[temp['GARD'] <= cut]
 # s2 = WeibullFitter()
-# s2.fit(l['Time'],l['Event'])
+# s2.fit(l['Time_OS'],l['Event_OS'])
 # # save fit parameters
 # s1_lambda = s1.lambda_ # adequate dose
 # s1_rho = s1.rho_
 # s2_lambda = s2.lambda_ # inadequate
 # s2_rho = s2.rho_
 # # plot weibull fit
-# plt.figure()
-# f6 = s1.plot_survival_function(label='above cut')
-# s2.plot_survival_function(ax=f6, label='below cut')
-# plt.ylim([0,1])
-# plt.xlabel('Time (years)')
-# plt.ylabel('Event-free Survival')
-# label2 = 'GARD cut: '+str(cut)
-# plt.text(0.1,0.2,label2)
-# plt.title('KM fit comparison for GARD cut')
-# # plt.savefig('Figures/Weibull_cut')
+# fig2 = s1.plot_survival_function(label='above cut', ci_show=False)
+# s2.plot_survival_function(ax=fig2, label='below cut', ci_show=False)
 # 
 # 
-# # evaluate S1 fit at a value t
-# # S1 is TD > GARD_T
-# # rho<1 => event likelihood decreases w/time
-# def s1(t):
+# #  weibull fits for tertiles based on DEFINITIVE
+# h = temp.loc[temp['GARD'] > tert_two]
+# s1 = WeibullFitter()
+# s1.fit(h['Time_OS'],h['Event_OS'])
+# m = temp.loc[(temp['GARD'] <= tert_two) & (temp['GARD'] > tert_one)]
+# s2 = WeibullFitter()
+# s2.fit(m['Time_OS'],m['Event_OS'])
+# l = temp.loc[temp['GARD'] <= tert_one]
+# s3 = WeibullFitter()
+# s3.fit(l['Time_OS'],l['Event_OS'])
+# # save fit parameters
+# s1_lambda = s1.lambda_ # high GARD
+# s1_rho = s1.rho_
+# s2_lambda = s2.lambda_ # med GARD
+# s2_rho = s2.rho_
+# s3_lambda = s3.lambda_ # low GARD
+# s3_rho = s3.rho_
+# # plot weibull fit
+# fig2 = s1.plot_survival_function(label='high GARD', ci_show=False)
+# s2.plot_survival_function(ax=fig2, label='medium GARD', ci_show=False)
+# s3.plot_survival_function(ax=fig2, label='low GARD', ci_show=False)
+# =============================================================================
+
+# evaluate S1 fit at a value t
+# S1 is TD > GARD_T = 64.185
+# rho<1 => event likelihood decreases w/time
+def s1(t):
+    
+    # prev calculated parameters for weibull fit
+    s1_lambda = 317.96402740720754
+    s1_rho = 1.683186130952728
+
+    return np.exp(-np.power(t/s1_lambda, s1_rho))
+
+# evaluate S2 fit at a value t
+# below GARD_T
+def s2(t):
+
+    # prev calculated parameters for weibull fit
+    s2_lambda = 140.2728364836933
+    s2_rho = 1.7529473462418368
+
+    return np.exp(-np.power(t/s2_lambda, s2_rho))
+
+# evaluate surv_high fit at a value t
+def s_high(t):
+    
+    s_high_lambda = 162.59840895531465
+    s_high_rho = 3.2277149721872997
+
+    return np.exp(-np.power(t/s_high_lambda, s_high_rho))
+
+# evaluate surv_med fit at a value t
+def s_med(t):
+    
+    s_med_lambda = 178.4081895526366
+    s_med_rho = 1.5342947530381978
+
+    return np.exp(-np.power(t/s_med_lambda, s_med_rho))
+
+# evaluate surv_low fit at a value t
+def s_low(t):
+    
+    s_low_lambda = 68.0990932580655
+    s_low_rho = 1.9166870289879596
+
+    return np.exp(-np.power(t/s_low_lambda, s_low_rho))
+
+
+# for 2N patients, draw from RSI distribution
+def rsi_sample(N, distr):
+
+    # for some reason this was originally giving identical samples but seems fine now
+    kde = stats.gaussian_kde(distr)
+    patients = kde.resample(2*N).flatten()
+    patients[patients<0] = 0.001
+    # rsi_sample = np.random.normal(loc=0.4267245088495575, scale=0.11221246412456044, size=2*N)
+    return patients
+
+
+
+rt_low = 60.
+rt_high = 70.
+cut = 64.185   # df['GARD'].median() # 
+tert_one = 46.1
+tert_two = 65.
+
+rsi_low = np.exp(-n*d*cut/rt_low) # max RSI for de-escalation
+
+# returns penalized survival curves for 2 treatment groups (control and boosted)
+# calls s1, s2
+def trial_two(temp, t, style):
+    
+    N = int(len(temp)/2)
+    
+    # calculate GARD, RxRSI 
+    # assumes 2Gy dose
+    temp['RxRSI'] = -n*d*cut/np.log(temp['RSI'])
+    
+    # initialize settings
+    temp['trt'] = '70 Gy'
+    temp['TD'] = rt_high
+    
+    grp1 = temp[:N].copy()
+    grp1['GARD'] = rt_high * (-np.log(grp1['RSI'])/2)
+    grp2 = temp[N:].copy()
+    
+    if style == 'random': # randomized trial
+
+        grp2['trt'] = '60 Gy'
+        grp2['TD'] = rt_low
+        grp2['GARD'] = rt_low * (-np.log(grp2['RSI'])/2)
+        
+    # de-escalate only in selected patients
+    if style == 'sorted': 
+     
+        grp2.loc[(grp2['RSI']<rsi_low),'TD'] = rt_low 
+        grp2.loc[(grp2['TD']==rt_high), 'trt'] = '60 Gy'
+        
+     
+    # noboost_count = grp2[grp2['TD']==low].count()
+    # boost_count = grp2[grp2['TD']>low].count()
+    
+    surv1 = []    
+    for index, patient in grp1.iterrows():
+        
+        # assign surv curves
+        if patient['GARD']>=cut: os = s1(t)
+        else: os = s2(t)
+            
+        surv1.append(os)    
+    
+    surv2 = []
+    for index, patient in grp2.iterrows():
+        
+        if patient['GARD']>=cut: os = s1(t)
+        else: os = s2(t)
+            
+        surv2.append(os)
+    
+    return surv1, surv2
+
+
+# returns penalized survival curves for 2 treatment groups (control and boosted)
+# calls s1, s2
+def trial_three(temp, t, style):
+    
+    N = int(len(temp)/2)
+    
+    # survival curves
+    surv_low = s_low(t)
+    surv_med = s_med(t)
+    surv_high = s_high(t)
+    
+    # count how many in each arm
+    l1 = m1 = h1 = 0
+    l2 = m2 = h2 = 0
+    
+    # count how many de-escalate
+    deesc = 0
+    
+    # initialize settings
+    temp['trt'] = '70 Gy'
+    temp['GARD60'] = rt_low * (-np.log(temp['RSI'])/2)
+    temp['GARD70'] = rt_high * (-np.log(temp['RSI'])/2)    
+    
+    grp1 = temp[:N].copy()
+    grp1['GARD'] = grp1['GARD70']
+    grp2 = temp[N:].copy()  # grp1[:]
+    
+    
+    if style == 'random': # randomized trial
+
+        grp2['trt'] = '60 Gy'
+        # grp2['TD'] = low
+        grp2['GARD'] = grp2['GARD60']
+      
+    for index, patient in grp1.iterrows():
+        
+        if patient['GARD'] >= tert_two: h1 += 1
+        elif patient['GARD'] >= tert_one: m1 += 1
+        else: l1 += 1
+            
+    for index, patient in grp2.iterrows():
+        
+        # de-escalate only in selected patients
+        if style == 'sorted': 
+            
+            x = patient['GARD70']
+            y = patient['GARD60']
+            if (((x > tert_two) & (y < tert_two)) or ((x > tert_one) & (y < tert_one))):
+                patient['GARD'] = x
+            else: 
+                patient['GARD'] = y
+                deesc += 1
+                
+        if patient['GARD'] >= tert_two: h2 += 1
+        elif patient['GARD'] >= tert_one: m2 += 1
+        else: l2 += 1
+            
+    surv1 = (l1*surv_low + m1*surv_med + h1*surv_high)/N
+    surv2 = (l2*surv_low + m2*surv_med + h2*surv_high)/N
+    
+    count1 = np.array([l1, m1, h1])
+    count2 = np.array([l2, m2, h2])
+    
+    return surv1, surv2, count1, count2, deesc
+ 
+
+
+
+
+
+# =============================================================================
+# # GARD high or low trial (cut 64.2)
+# # check what cut is before running
+# N = 150
+# rsi_distr = df['RSI']
+# tmin = 0
+# tmax = 72
+# t = np.linspace(tmin, tmax) # time axis in months
+# style = 'random'
+# repeats = 20
 # 
-#     return np.exp(-np.power(t/s1_lambda, s1_rho))
+# curve1 = []
+# curve2 = []
+# var1 = []
+# var2 = []
+# for i in range(repeats):
+#     
+#     patients = pd.DataFrame(rsi_sample(N, rsi_distr), columns=['RSI'])
+#     surv1, surv2 = trial_two(patients, t, style)
+#     curve1.append(np.mean(surv1, axis=0))
+#     curve2.append(np.mean(surv2, axis=0))
+#     
+#     
+# os1 = np.mean(curve1, axis=0)
+# lower1 = np.percentile(curve1, 2.5, axis=0)
+# upper1 = np.percentile(curve1, 97.5, axis=0)
+# os2 = np.mean(curve2, axis=0)
+# lower2 = np.percentile(curve2, 2.5, axis=0)
+# upper2 = np.percentile(curve2, 97.5, axis=0)
 # 
-# # evaluate S2 fit at a value t
-# # below GARD_T
-# def s2(t):
+# fig, ax = plt.subplots(figsize=(7,5),dpi=100) # 
+# plt.fill_between(t, lower1, upper1, color='#d95f02', alpha=.3) 
+# plt.fill_between(t, lower2, upper2, color='peachpuff', alpha=.3) 
+# plt.plot(t, os1, color='coral', label='Standard dose (70Gy)')
+# plt.plot(t, os2, color='peachpuff', label='De-intensified dose (60Gy)')
+# plt.legend(loc='lower left')
+# plt.xlabel('Months')
+# plt.ylabel('Percent free of local recurrence')
+# ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: '{:.0%}'.format(y))) 
+# plt.ylim(0,1)
+# plt.xlim(0,tmax)
 # 
-#     return np.exp(-np.power(t/s2_lambda, s2_rho))
+# print(N, repeats)
+# print(lower1[-1], os1[-1], upper1[-1])
+# print(lower2[-1], os2[-1], upper2[-1])
+# print(lower1[18], os1[18], upper1[18])
+# print(lower2[18], os2[18], upper2[18])
 # =============================================================================
 
 
-# =============================================================================
-# # RxRSI calc and sort for waterfall plot
-# temp = df.sort_values(by='RxRSI').reset_index().drop(columns=['index'])
-# 
-# # group relative to the SOC range 
-# high = 70
-# low = 54
-# hlines = []
-# llines = []
-# for i in range(len(temp)):
-#     y = temp['RxRSI'].loc[i] 
-#     if y < low:
-#         llines.append([(i+1,y),(i+1,low)])
-#     if y > high:
-#         hlines.append([(i+1,high),(i+1,y)])
-# # percentages for legend
-# lperc = round(100*len(llines)/len(temp))
-# hperc = round(100*len(hlines)/len(temp))
-# mperc = 100 - lperc - hperc
-# # below here actually makes the plot
-# hlinecoll = matcoll.LineCollection(hlines, colors='tomato')
-# llinecoll = matcoll.LineCollection(llines, colors='royalblue')
-# plt.figure()
-# f7, ax = plt.subplots()
-# ax.add_collection(hlinecoll)
-# ax.add_collection(llinecoll)
-# plt.scatter(np.linspace(1,len(temp),len(temp)),temp['RxRSI'],c=temp['RxRSI'],cmap='coolwarm')
-# plt.axhline(y=low,color='gray')
-# plt.axhline(y=high,color='gray')
-# plt.xlim([0,len(temp)])
-# plt.ylim([0,140])
-# plt.xlabel('Patient ID')
-# plt.ylabel('RxRSI')
-# plt.title('RxRSI (Gy) for GARD_T = '+str(round(cut,1)))
-# plt.text(40, 20, str(lperc)+'% of patients require <'+str(low)+'Gy')
-# plt.text(40, 30, str(mperc)+'% of patients receive RxRSI within SOC range')
-# plt.text(40, 40, str(hperc)+'% of patients require >'+str(high)+'Gy')
-# plt.show()
-# # plt.savefig('Figures/RxRSI_waterfall')
-# =============================================================================
+# trial with 3-curve fits
+N = 200 # patients per arm
+rsi_distr = df['RSI']
+tmin = 0
+tmax = 72
+t = np.linspace(tmin, tmax, 37) # time axis in months
+style = 'sorted'
+repeats = 20
+
+curve1 = []
+curve2 = []
+var1 = []
+var2 = []
+counts1 = []
+counts2 = []
+down = []
+for i in range(repeats):
+    
+    patients = pd.DataFrame(rsi_sample(N, rsi_distr), columns=['RSI'])
+    surv1, surv2, count1, count2, deesc = trial_three(patients, t, style)
+    curve1.append(surv1) #np.mean(surv1, axis=0)
+    curve2.append(surv2) #np.mean(surv2, axis=0)
+    counts1.append(count1)
+    counts2.append(count2)
+    down.append(deesc)
+    
+os1 = np.mean(curve1, axis=0)
+lower1 = np.percentile(curve1, 2.5, axis=0)
+upper1 = np.percentile(curve1, 97.5, axis=0)
+os2 = np.mean(curve2, axis=0)
+lower2 = np.percentile(curve2, 2.5, axis=0)
+upper2 = np.percentile(curve2, 97.5, axis=0)
+
+fig, ax = plt.subplots(figsize=(7,5),dpi=100) # 
+plt.fill_between(t, lower1, upper1, color='#d95f02', alpha=.3) 
+plt.fill_between(t, lower2, upper2, color='peachpuff', alpha=.3) 
+plt.plot(t, os1, color='coral', label='Standard dose (70Gy)')
+plt.plot(t, os2, color='peachpuff', label='De-intensified dose (60Gy)')
+plt.legend(loc='lower left')
+plt.xlabel('Months')
+plt.ylabel('Percent free of local recurrence')
+ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: '{:.0%}'.format(y))) 
+plt.ylim(0,1)
+plt.xlim(0,60)
+
+print(style,'de-escalation,',str(N),'patients per arm,',str(repeats),'repeats')
+
+# print('2 years')
+# print(lower1[12], os1[12], upper1[12])
+# print(lower2[12], os2[12], upper2[12])
+
+print('3 years')
+print(lower1[18], os1[18], upper1[18])
+print(lower2[18], os2[18], upper2[18])
+
+# print('6 years')
+# print(lower1[-1], os1[-1], upper1[-1])
+# print(lower2[-1], os2[-1], upper2[-1])
+
+print('Average # in l/m/h GARD, group 1:'+str(np.mean(counts1, axis=0)))
+print('Average # in l/m/h GARD, group 2:'+str(np.mean(counts2, axis=0)))
+print('# de-escalated in group 2:'+str(np.mean(deesc)))
 
 
-# =============================================================================
-# # RxRSI histogram, colored
-# # replace df to get that specific plot
-# # CAUTION the color cutoff depends on the bin arrangement
-# # the PDF is also scaled manually
-# plt.figure()
-# f8, ax = plt.subplots()
-# xmax = round(max(df['RxRSI']/20))*20 - 2
-# xint = round(max(df['RxRSI']/20))*10
-# x = np.linspace(0,xmax,xint)
-# array = df['RxRSI']
-# N, bins, patches = ax.hist(array,bins=x)
-# bw = 1.2*array.std()*np.power(array.size,-1/5)
-# kde = stats.gaussian_kde(array)
-# scale = 350 # idk if this is the right scale but it's eyeballed CHECK
-# curve = scale*kde(x)
-# for i in range(0,int(low/2)):
-#     patches[i].set_facecolor('royalblue')
-# for i in range(int(low/2),int(high/2)):    
-#     patches[i].set_facecolor('gray')
-# for i in range(int(high/2),xint-1):
-#     patches[i].set_facecolor('tomato')
-# plt.xlabel("RxRSI")
-# plt.title('RxRSI distribution')
-# plt.plot(x, curve, linestyle="dashed", color='black')
-# # plt.savefig('Figures/RxRSI_distribution')
-# =============================================================================
 
-  
-# =============================================================================
+
 # # print cox analysis
-# temp = df[['Event','Time','GARD']]
-# temp['Time'].replace(0,0.001,inplace=True)
+# temp = df[['Event_OS','Time_OS','GARD']]
+# temp['Time_OS'].replace(0,0.001,inplace=True)
 # model = CoxPHFitter()
-# model.fit(df=temp, duration_col='Time', event_col='Event')
+# model.fit(df=temp, duration_col='Time_OS', event_col='Event_OS')
 # # print('NKI data, Cox model summary')
 # cox = model.summary
 # print(cox)
-# 
-# temp = df2[['Event','Time','GARD']]
-# model2 = CoxPHFitter()
-# model2.fit(df=temp, duration_col='Time', event_col='Event')
-# # print('Other data, Cox model summary')
-# cox2 = model2.summary
-# print(cox2)
-# 
-# temp = pd.concat([cox,cox2]).reset_index(drop=True)
-# =============================================================================
-
-
-# =============================================================================
-# # TNM AUC(t)
-# temp = df[:]
-# tmax = round(max(df['Time_OS']))
-# times = []
-# sens_tnm = []
-# spec_tnm = []
-# for i in range(10, tmax):
-#    high_die = len(temp[(temp['TNM8'] == 'III') & (temp['Event_OS'] == 1) & (temp['Time_OS']<=i)]) 
-#    high_live = len(temp[(temp['TNM8'] == 'III')]) - high_die
-#    low_die = len(temp[(temp['TNM8'] != 'III') & (temp['Event_OS'] == 1) & (temp['Time_OS']<=i)]) 
-#    low_live = len(temp[(temp['TNM8'] != 'III')]) - low_die
-#    sens_tnm.append(high_die/(high_die + low_die))
-#    spec_tnm.append(low_live/(low_live + high_live))
-#    times.append(i)
-# auc_tnm = np.array(sens_tnm)+np.array(spec_tnm)
-# auc_tnm /= 2
-# 
-# plt.plot(times, auc_tnm)
-# plt.ylabel('AUC')
-# plt.xlabel('time (months)')
-# plt.ylim([0,1])
-# plt.xlim([0,60])
-# =============================================================================
 
 
