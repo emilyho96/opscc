@@ -98,10 +98,11 @@ quantile(prodlim(Hist(time=Time_OS, event=Event_OS)~1,data=temp,reverse=T))
 # GARD stats
 quantile(temp$GARD)
 sd(temp$GARD)
-sd(temp$EQD)
-quantile(eqd70$GARD)
+sd(temp$TD)
+sd(temp$EQD2)
+```
 
-# survival stats
+```{r - survival stats}
 # stratified by median, definitive only 
 gard_high <- temp_filt[temp_filt$GARD >= median(temp_filt$GARD),]
 gard_low <- temp_filt[temp_filt$GARD < median(temp_filt$GARD), ]
@@ -117,20 +118,23 @@ tert_high <- temp_filt[temp_filt$GARD >65.03, ]
 summary(survfit(Surv(Time_OS, Event_OS)~1, data=tert_low), times = c(36))
 summary(survfit(Surv(Time_OS, Event_OS)~1, data=tert_med), times = c(36))
 summary(survfit(Surv(Time_OS, Event_OS)~1, data=tert_high), times = c(36))
-
-
-
 ```
 
-```{r - UVA not in other parts of this file}
+```{r - UVA}
 # GARD discrete, definitive
 temp_filt$GARD_discrete = factor(temp_filt$GARD_discrete, levels = c("Low GARD","High GARD"))
 f_discrete <- cph(Surv(Time_OS, Event_OS) ~ GARD_discrete, data=temp_filt, x=T, y=T, surv=T)
 f_discrete
+exp(f_discrete[["coefficients"]])
+exp(confint(f_discrete)) 
+```
 
+```{r UVA for EQD 69-71}
 #  for EQD70 group, definitive
 f<-cph(Surv(Time_OS, Event_OS) ~ GARD, data=eqd70, x=T, y=T, surv=T)
 f
+exp(f[["coefficients"]])
+exp(confint(f)) 
 ```
 
 # Table 1
@@ -175,7 +179,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 
-df = pd.read_csv('GARD_HPVpos7.csv')
+df = pd.read_csv('GARD_HPVpos8.csv')
 
 # constants/calculations
 d = 2
@@ -255,10 +259,6 @@ cut_os_filt <- ggsurvplot(gard_fit,
            )
 cut_os_filt
 
-
-# pdf(file="Figures/cut_filt.pdf")
-# cut_os_filt
-# dev.off()
 ```
 
 ## 2b - 3 groups
@@ -381,67 +381,37 @@ filt_os_opt <- ggsurvplot(km_tert_opt, data = temp_filt3, size = 1,
    fontsize = 7
    )
 filt_os_opt 
-
-# pdf(file="tertiles_filtered.pdf")
-# filt_os_opt
-# dev.off()
-
 ```
 
 
 
 
 # Fig 3 and Supp Table 1
-## Fig 3a
 ```{r - pare down dataset more}
-
 temp_filt2 <- temp_filt %>%
   mutate(ECOG = as.character(ECOG)) %>%
   mutate(ECOG = if_else(ECOG=='0','0','1or2')) %>%
-  mutate(smoking = ifelse(smoking==0,NA,smoking))  %>%
-  mutate(smoking = ifelse(smoking=='Never',0,1)) %>%
+  # mutate(smoking = ifelse(smoking==0,NA,smoking))  %>%
+  # mutate(smoking = ifelse(smoking=='Never',0,1)) %>%
   drop_na(Pack_years) # 4 patients are missing pack-year history, so drop them
 ```
 
-```{r - create/print nomogram}
+```{r RTOG - combined T/N/Smoking}
 dd <- datadist(temp_filt2)
 options(datadist='dd')
-f<-cph(Surv(Time_OS, Event_OS) ~ AJCC8 + ECOG + Pack_years + GARD,
+f<-cph(Surv(Time_OS, Event_OS) ~ Tstage + Nstage + Pack_years,
        data = temp_filt2, surv=T, x=T, y=T)
-f 
 
-surv <- Survival(f)
-surv3 <- function(x) surv(36, lp=x)
+temp_filt2$lp <- f[["linear.predictors"]]
 
-# # surv percentages to be included on plot (0.6 = 60% surv)
-# ss<-c(0.7, 0.8, 0.9, 0.95, 0.98, 0.99)
-# 
-# nom <- nomogram(f, 
-#                 fun = list(surv3), 
-#                 funlabel = c('3 yr surv'), 
-#                 fun.at = list(ss) )
-# plot(nom, xfrac = 0.4)
-# 
-# x = f[["linear.predictors"]]
-# quantile(x)
-```
-## Fig 3b
-```{r AJCC8}
-dd <- datadist(temp_filt)
-options(datadist='dd')
-f<-cph(Surv(Time_OS, Event_OS) ~ AJCC8,
-       data = temp_filt, surv=T, x=T, y=T)
-
-temp_filt$lp <- f[["linear.predictors"]]
-
-timeROC_tnm<-timeROC(T=temp_filt$Time_OS, delta=temp_filt$Event_OS, marker=temp_filt$lp,
+timeROC_rtog<-timeROC(T=temp_filt2$Time_OS, delta=temp_filt2$Event_OS, marker=temp_filt2$lp,
                   cause=1,weighting="marginal",
                   times=seq(0,100,1), 
                   iid=TRUE)
 
-plot(timeROC_tnm, time= 36)
+plot(timeROC_rtog, time= 36)
 
-t <- confint(timeROC_tnm)
+t <- confint(timeROC_rtog)
 t[["CI_AUC"]][31,]
 ```
 
@@ -477,60 +447,37 @@ t <- confint(timeROC_clusters)
 t[["CI_AUC"]][31,]
 ```
 
-```{r combined AJCC/ECOG/smoking/clusters}
-dd <- datadist(temp_filt2)
-options(datadist='dd')
-f<-cph(Surv(Time_OS, Event_OS) ~ AJCC8 + ECOG + Pack_years + Clusters,
-       data = temp_filt2, surv=T, x=T, y=T)
-
-temp_filt2$lp <- f[["linear.predictors"]]
-
-timeROC_nomo<-timeROC(T=temp_filt2$Time_OS, delta=temp_filt2$Event_OS, marker=temp_filt2$lp,
-                  cause=1,weighting="marginal",
-                  times=seq(0,100,1), 
-                  iid=TRUE)
-
-plot(timeROC_nomo, time= 36)
-
-t <- confint(timeROC_nomo)
-t[["CI_AUC"]][31,]
-```
-
-```{r RTOG - combined T/N/Smoking}
-dd <- datadist(temp_filt2)
-options(datadist='dd')
-f<-cph(Surv(Time_OS, Event_OS) ~ Tstage + Nstage + Pack_years,
-       data = temp_filt2, surv=T, x=T, y=T)
-
-temp_filt2$lp <- f[["linear.predictors"]]
-
-timeROC_rtog<-timeROC(T=temp_filt2$Time_OS, delta=temp_filt2$Event_OS, marker=temp_filt2$lp,
-                  cause=1,weighting="marginal",
-                  times=seq(0,100,1), 
-                  iid=TRUE)
-
-plot(timeROC_rtog, time= 36)
-
-t <- confint(timeROC_rtog)
-t[["CI_AUC"]][31,]
-```
-
-```{r combined AJCC/ECOG/Smoking/GARD}
-dd <- datadist(temp_filt2)
-options(datadist='dd')
+```{r combined RTOG/GARD}
 f<-cph(Surv(Time_OS, Event_OS) ~ Tstage + Nstage + Pack_years + GARD,
        data = temp_filt2, surv=T, x=T, y=T)
 
 temp_filt2$lp <- f[["linear.predictors"]]
 
-timeROC_withgard<-timeROC(T=temp_filt2$Time_OS, delta=temp_filt2$Event_OS, marker=temp_filt2$lp,
+timeROC_rtoggard<-timeROC(T=temp_filt2$Time_OS, delta=temp_filt2$Event_OS, marker=temp_filt2$lp,
                   cause=1,weighting="marginal",
                   times=seq(0,100,1), 
                   iid=TRUE)
 
-plot(timeROC_withgard, time= 36)
+plot(timeROC_rtoggard, time= 36)
 
-t <- confint(timeROC_withgard)
+t <- confint(timeROC_rtoggard)
+t[["CI_AUC"]][31,]
+```
+
+```{r combined RTOG/GARD/clusters}
+f<-cph(Surv(Time_OS, Event_OS) ~ Tstage + Nstage + Pack_years + GARD + Clusters,
+       data = temp_filt2, surv=T, x=T, y=T)
+
+temp_filt2$lp <- f[["linear.predictors"]]
+
+timeROC_all<-timeROC(T=temp_filt2$Time_OS, delta=temp_filt2$Event_OS, marker=temp_filt2$lp,
+                  cause=1,weighting="marginal",
+                  times=seq(0,100,1), 
+                  iid=TRUE)
+
+plot(timeROC_all, time= 36)
+
+t <- confint(timeROC_all)
 t[["CI_AUC"]][31,]
 ```
 
@@ -544,15 +491,15 @@ gard_x <- timeROC_gard$FP[,which(timeROC_gard$times==time)]
 gard_y <- timeROC_gard$TP[,which(timeROC_gard$times==time)]
 leg2 = paste("GARD, AUC =",
              toString(round(timeROC_gard$AUC[which(timeROC_gard$times==time)]*100,1)))
-withgard_x <- timeROC_withgard$FP[,which(timeROC_withgard$times==time)]
-withgard_y <- timeROC_withgard$TP[,which(timeROC_withgard$times==time)]
+rtoggard_x <- timeROC_rtoggard$FP[,which(timeROC_rtoggard$times==time)]
+rtoggard_y <- timeROC_rtoggard$TP[,which(timeROC_rtoggard$times==time)]
 leg3 = paste("RTOG + GARD, AUC =",
-             toString(round(timeROC_withgard$AUC[which(timeROC_withgard$times==time)]*100,1)))
+             toString(round(timeROC_rtoggard$AUC[which(timeROC_rtoggard$times==time)]*100,1)))
 
 plot(0,0,type="l",xlim=c(0,1),ylim=c(0,1),xlab="1-Specificity",ylab="Sensitivity")
 lines(rtog_x, rtog_y, col="#F8766D", type="l")
 lines(gard_x, gard_y, col='#6495ED', type="l")
-lines(withgard_x, withgard_y, col='#000000', type="l")
+lines(rtoggard_x, rtoggard_y, col='#000000', type="l")
 legend(.43, .2, legend=c(leg3, leg2, leg1),
        col=c('#000000', '#6495ED', "#F8766D"), lty=1, cex=0.8)
 abline(0,1,lty=2)
@@ -924,9 +871,9 @@ cox_unfilt_os_gard <- ggplot(p) + geom_line(aes(x=GARD,y=yhat), color = 'red') +
              aes(label = sprintf("HR = %s \np = %.3f \nchi-squared = %.3f", stats_HN[2], p, chisq), x=80, y=2))
 cox_unfilt_os_gard
 
-# pdf(file="cox_unfiltered.pdf")
-# cox_unfilt_os_gard
-# dev.off()
+f
+exp(f[["coefficients"]])
+exp(confint(f)) 
 ```
 
 ## Supp Fig1b
@@ -954,9 +901,10 @@ cox_filt_os_gard <- ggplot(p) + geom_line(aes(x=GARD,y=yhat), color = 'red') +
              aes(label = sprintf("HR = %s \np = %.3f \nchi-squared = %.3f", stats_HN[2], p, chisq), x=80, y=2.8))
 cox_filt_os_gard
 
-# pdf(file="cox_filtered.pdf")
-# cox_filt_os_gard
-# dev.off()
+
+f
+exp(f[["coefficients"]])
+exp(confint(f)) 
 ```
 
 
