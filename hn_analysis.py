@@ -20,22 +20,13 @@ from lifelines import CoxPHFitter
 from scipy.optimize import curve_fit
 from matplotlib import collections as matcoll
 from scipy import stats 
-# import rpy2.rinterface as rinterface
 
-
-df = pd.read_csv('GARD_HPVpos7.csv')
-# df['Source'] = 'Loris'
-# df = df.sort_values(by='GARD').reset_index().drop(columns=['index'])
-# df['cancer_death'] = 0
-# df.loc[df['Cause_of_Death']==1, 'cancer_death'] = 1
+df = pd.read_csv('GARD_HPVpos8.csv')
 temp = df.loc[df['RT']=='definitive']
-# df = df.drop(df[df['TD']<60].index)
 
-
-# SOC range, cut
-cut = 64.185   # df['GARD'].median() # 
-tert_one = 46.1
-tert_two = 65
+# tertile GARD cutoffs
+tert_one = 46
+tert_two = 65.015
 
 # constants/calculations
 d = 2
@@ -47,7 +38,7 @@ df['alpha_g'] = ag
 gard = df['n']*df['d_c']*(ag+beta*df['d_c'])
 df['GARD'] = gard
 df['EQD2'] = df['TD'] * (df['d_c']+10) / (d+10) # alpha/beta = 10
-df['RxRSI'] = cut/(df['alpha_g']+beta*d)
+# df['RxRSI'] = cut/(df['alpha_g']+beta*d)
 
 
 # df.to_csv('/Users/Emily/Library/CloudStorage/Box-Box/CWRU/Research/MathOnc/opscc/formike.csv',index=False)
@@ -344,89 +335,49 @@ def KMbyGARD(time, event, sort, cut, show = False):
 
 
 
-# =============================================================================
-# # weibull fits for above and below cut based on DEFINITIVE
-# h = temp.loc[temp['GARD'] > cut]
-# s1 = WeibullFitter()
-# s1.fit(h['Time_OS'],h['Event_OS'])
-# l = temp.loc[temp['GARD'] <= cut]
-# s2 = WeibullFitter()
-# s2.fit(l['Time_OS'],l['Event_OS'])
-# # save fit parameters
-# s1_lambda = s1.lambda_ # adequate dose
-# s1_rho = s1.rho_
-# s2_lambda = s2.lambda_ # inadequate
-# s2_rho = s2.rho_
-# # plot weibull fit
-# fig2 = s1.plot_survival_function(label='above cut', ci_show=False)
-# s2.plot_survival_function(ax=fig2, label='below cut', ci_show=False)
-# 
-# 
-# #  weibull fits for tertiles based on DEFINITIVE
-# h = temp.loc[temp['GARD'] > tert_two]
-# s1 = WeibullFitter()
-# s1.fit(h['Time_OS'],h['Event_OS'])
-# m = temp.loc[(temp['GARD'] <= tert_two) & (temp['GARD'] > tert_one)]
-# s2 = WeibullFitter()
-# s2.fit(m['Time_OS'],m['Event_OS'])
-# l = temp.loc[temp['GARD'] <= tert_one]
-# s3 = WeibullFitter()
-# s3.fit(l['Time_OS'],l['Event_OS'])
-# # save fit parameters
-# s1_lambda = s1.lambda_ # high GARD
-# s1_rho = s1.rho_
-# s2_lambda = s2.lambda_ # med GARD
-# s2_rho = s2.rho_
-# s3_lambda = s3.lambda_ # low GARD
-# s3_rho = s3.rho_
-# # plot weibull fit
-# fig2 = s1.plot_survival_function(label='high GARD', ci_show=False)
-# s2.plot_survival_function(ax=fig2, label='medium GARD', ci_show=False)
-# s3.plot_survival_function(ax=fig2, label='low GARD', ci_show=False)
-# =============================================================================
-
-# evaluate S1 fit at a value t
-# S1 is TD > GARD_T = 64.185
-# rho<1 => event likelihood decreases w/time
-def s1(t):
-    
-    # prev calculated parameters for weibull fit
-    s1_lambda = 317.96402740720754
-    s1_rho = 1.683186130952728
-
-    return np.exp(-np.power(t/s1_lambda, s1_rho))
-
-# evaluate S2 fit at a value t
-# below GARD_T
-def s2(t):
-
-    # prev calculated parameters for weibull fit
-    s2_lambda = 140.2728364836933
-    s2_rho = 1.7529473462418368
-
-    return np.exp(-np.power(t/s2_lambda, s2_rho))
+#  weibull fits for tertiles based on definitive
+h = temp.loc[temp['GARD'] > tert_two]
+s1 = WeibullFitter()
+s1.fit(h['Time_OS'],h['Event_OS'])
+m = temp.loc[(temp['GARD'] <= tert_two) & (temp['GARD'] > tert_one)]
+s2 = WeibullFitter()
+s2.fit(m['Time_OS'],m['Event_OS'])
+l = temp.loc[temp['GARD'] <= tert_one]
+s3 = WeibullFitter()
+s3.fit(l['Time_OS'],l['Event_OS'])
+# save fit parameters
+s1_lambda = s1.lambda_ # high GARD
+s1_rho = s1.rho_
+s2_lambda = s2.lambda_ # med GARD
+s2_rho = s2.rho_
+s3_lambda = s3.lambda_ # low GARD
+s3_rho = s3.rho_
+# plot weibull fit
+fig2 = s1.plot_survival_function(label='high GARD', ci_show=False)
+s2.plot_survival_function(ax=fig2, label='medium GARD', ci_show=False)
+s3.plot_survival_function(ax=fig2, label='low GARD', ci_show=False)
 
 # evaluate surv_high fit at a value t
 def s_high(t):
     
-    s_high_lambda = 162.59840895531465
-    s_high_rho = 3.2277149721872997
+    s_high_lambda = s1.lambda_
+    s_high_rho = s1.rho_
 
     return np.exp(-np.power(t/s_high_lambda, s_high_rho))
 
 # evaluate surv_med fit at a value t
 def s_med(t):
     
-    s_med_lambda = 178.4081895526366
-    s_med_rho = 1.5342947530381978
+    s_med_lambda = s2.lambda_
+    s_med_rho = s2.rho_
 
     return np.exp(-np.power(t/s_med_lambda, s_med_rho))
 
 # evaluate surv_low fit at a value t
 def s_low(t):
     
-    s_low_lambda = 68.0990932580655
-    s_low_rho = 1.9166870289879596
+    s_low_lambda = s3.lambda_
+    s_low_rho = s3.rho_
 
     return np.exp(-np.power(t/s_low_lambda, s_low_rho))
 
@@ -440,69 +391,14 @@ def rsi_sample(N, distr):
     patients[patients<0] = 0.001
     # rsi_sample = np.random.normal(loc=0.4267245088495575, scale=0.11221246412456044, size=2*N)
     return patients
-
-
-
+  
 rt_low = 60.
 rt_high = 70.
 cut = 64.185   # df['GARD'].median() # 
-tert_one = 46.1
-tert_two = 65.
+tert_one = 46
+tert_two = 65.015
 
 rsi_low = np.exp(-n*d*cut/rt_low) # max RSI for de-escalation
-
-# returns penalized survival curves for 2 treatment groups (control and boosted)
-# calls s1, s2
-def trial_two(temp, t, style):
-    
-    N = int(len(temp)/2)
-    
-    # calculate GARD, RxRSI 
-    # assumes 2Gy dose
-    temp['RxRSI'] = -n*d*cut/np.log(temp['RSI'])
-    
-    # initialize settings
-    temp['trt'] = '70 Gy'
-    temp['TD'] = rt_high
-    
-    grp1 = temp[:N].copy()
-    grp1['GARD'] = rt_high * (-np.log(grp1['RSI'])/2)
-    grp2 = temp[N:].copy()
-    
-    if style == 'random': # randomized trial
-
-        grp2['trt'] = '60 Gy'
-        grp2['TD'] = rt_low
-        grp2['GARD'] = rt_low * (-np.log(grp2['RSI'])/2)
-        
-    # de-escalate only in selected patients
-    if style == 'sorted': 
-     
-        grp2.loc[(grp2['RSI']<rsi_low),'TD'] = rt_low 
-        grp2.loc[(grp2['TD']==rt_high), 'trt'] = '60 Gy'
-        
-     
-    # noboost_count = grp2[grp2['TD']==low].count()
-    # boost_count = grp2[grp2['TD']>low].count()
-    
-    surv1 = []    
-    for index, patient in grp1.iterrows():
-        
-        # assign surv curves
-        if patient['GARD']>=cut: os = s1(t)
-        else: os = s2(t)
-            
-        surv1.append(os)    
-    
-    surv2 = []
-    for index, patient in grp2.iterrows():
-        
-        if patient['GARD']>=cut: os = s1(t)
-        else: os = s2(t)
-            
-        surv2.append(os)
-    
-    return surv1, surv2
 
 
 # returns penalized survival curves for 2 treatment groups (control and boosted)
@@ -569,10 +465,6 @@ def trial_three(temp, t, style):
     count2 = np.array([l2, m2, h2])
     
     return surv1, surv2, count1, count2, deesc
- 
-
-
-
 
 
 # =============================================================================
