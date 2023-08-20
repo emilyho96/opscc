@@ -523,7 +523,7 @@ rsi_distr = df['RSI']
 tmin = 0
 tmax = 72
 t = np.linspace(tmin, tmax, 37) # time axis in months
-style = 'sorted'
+style = 'random'
 repeats = 20
 
 curve1 = []

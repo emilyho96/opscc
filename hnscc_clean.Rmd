@@ -218,8 +218,6 @@ plt.show()
 ```
 
 # Fig 2
-
-## 2a - 2 groups
 ``` {r stratified KM by median (definitive group)}
 
 # finding the cutpoint; this shows that it is very close to median
@@ -227,161 +225,32 @@ library(cutpointr)
 cp <- cutpointr(temp, GARD, Event_OS, direction="<=")
 summary(cp)
 
-midpt_filt = median(temp_filt$GARD)
-
-# overall KM - delete
-km_os_filt <- ggsurvplot(fit=survfit(Surv(Time_OS, Event_OS) ~ 1, data=temp_filt),
-           xlab = "Time (months)", xlim = c(0, 60), break.time.by = 12, 
-           conf.int=FALSE, risk.table=TRUE, 
-           ggtheme = theme(aspect.ratio = 0.5),
-           tables.theme =  theme(aspect.ratio = 0.06),
-           )
+midpt_filt = round(median(temp_filt$GARD),1)
 
 # stratified by median GARD
 gard_fit <- survfit(Surv(Time_OS, Event_OS) ~ GARD_discrete, data=temp_filt)
 lab = paste("OS stratified by Median GARD: ",midpt_filt)
+leg1 = paste("GARD > ",midpt_filt)
+leg2 = paste("GARD < ",midpt_filt)
 cut_os_filt <- ggsurvplot(gard_fit, 
            data = temp_filt,
            conf.int=FALSE, 
            risk.table=TRUE,
-           xlab = "Time (months)", 
+           xlab = "Months since diagnosis", 
            xlim = c(0, 60), 
-           break.time.by = 12, 
-           legend.labs = c("GARD > 64.2", "GARD < 64.2"),
-           legend = c(.3,.25),
-           pval.size = 7,
-           font.legend = 18,
-           font.x = 18,
-           font.y = 18,
-           fontsize = 7,
-           pval=TRUE, 
-           pval.coord = c(42,.15)
+           ylab = "Overall Survival",
+           surv.scale = "percent",
+           break.time.by = 12,
+           legend.labs = c(leg1, leg2)
            )
 cut_os_filt
 
+pdf(file="Figures/cut_filt.pdf")
+cut_os_filt
+dev.off()
 ```
 
-## 2b - 3 groups
-```{r load 2 cutpoints packages}
-library(here)
-library(survival)
-library(ggpubr)
-library(survminer)
-library(rms) # for coxph function that has additional stats
-library(stringr)
 
-
-sweep_cutpoints2 <- function(tidy_data, surv_obj){
-   cutpoints_first = quantile(tidy_data$pred_lp, prob = seq(0, 1, 0.01))[-(1:5)]
-   cutpoints_first = cutpoints_first[-(96:101)]
-   cutpoint_first_vec <- c()
-   cutpoint_second_vec <- c()
-   low_n_vec <- c()
-   middle_n_vec <- c()
-   high_n_vec <- c()
-   chisq_vec <- c()
-   for (i in 1:length(cutpoints_first)){
-      pred_lp_after_cutoff <- tidy_data$pred_lp[tidy_data$pred_lp > min(cutpoints_first)]
-      cutpoints_second <- quantile(pred_lp_after_cutoff, prob = seq(0, 1, 0.01))[-(1:5)]
-      cutpoints_second <- cutpoints_second[-(96:101)]
-      for (j in 1:length(cutpoints_second)){
-         tidy_data_labs <- tidy_data %>%
-            mutate(pred_group = case_when(pred_lp <= cutpoints_first[i] ~ "low", 
-                                          pred_lp > cutpoints_first[i] &
-                                             pred_lp <= cutpoints_second[j] ~ "middle", 
-                                          pred_lp > cutpoints_second[j] ~ "high"))
-         survdiff_results <- survdiff(surv_obj ~ pred_group, data = tidy_data_labs)
-         chisq_vec <- c(chisq_vec, survdiff_results$chisq)
-         cutpoint_first_vec <- c(cutpoint_first_vec, cutpoints_first[[i]])
-         cutpoint_second_vec <- c(cutpoint_second_vec, cutpoints_second[[j]])
-         low_n_vec <- c(low_n_vec, nrow(tidy_data_labs %>% filter(pred_group == "low")))
-         middle_n_vec <- c(middle_n_vec, nrow(tidy_data_labs %>% filter(pred_group == "middle")))
-         high_n_vec <- c(high_n_vec, nrow(tidy_data_labs %>% filter(pred_group == "high")))
-      }
-   }
-   data.frame(cutpoint1 = cutpoint_first_vec,
-              cutpoint2 = cutpoint_second_vec,
-              cutdiff = cutpoint_second_vec - cutpoint_first_vec,
-              low_n = low_n_vec,
-              middle_n = middle_n_vec,
-              high_n = high_n_vec,
-              chisq = chisq_vec) %>%
-      rowwise() %>%
-      mutate(min_n = min(low_n, middle_n, high_n)) %>%
-      ungroup()
-}
-```
-
-```{r - load results}
-# load data
-temp_filt$pred_lp <- temp_filt$GARD
-
-# load_results
-surv_os <- Surv(time = temp_filt$Time_OS, event = temp_filt$Event_OS)
-
-cutpoints_filtered_os <- sweep_cutpoints2(temp_filt, surv_os)
-```
-
-```{r plot}
-# classify predictions for OS
-cutpoints_top <- cutpoints_filtered_os %>%
-  filter(min_n >= 10) %>% #require at least min_n samples in each group
-  filter(chisq > 10)  %>% # ==max(chisq)   #cutpoints with the highest chisq result
-  filter(cutdiff >= 10)
-
-df <- cutpoints_top[order(-cutpoints_top$chisq),]
-
-# they all cut the data with the same samples in each group
-# taking the first value to get a single value for each cutpoint
-rank <- 1
-double_cutpoint_best <- c(cut1 = df[rank, ]$cutpoint1, 
-                          cut2 = df[rank, ]$cutpoint2)
-
-lab1 = paste("GARD >",toString(round(10*df[rank, ]$cutpoint2)/10))
-lab2 = paste("GARD ",toString(round(10*df[rank, ]$cutpoint1)/10),"-",toString(round(10*df[rank, ]$cutpoint2)/10))
-lab3 = paste("GARD <",toString(round(10*df[rank, ]$cutpoint1)/10))
-
-temp_filt3 <- temp_filt %>%
-      mutate(
-          pred_3grp_optimal = case_when(pred_lp <= double_cutpoint_best["cut1"] ~ "3_Low",
-                                pred_lp > double_cutpoint_best["cut1"] &
-                                   pred_lp <= double_cutpoint_best["cut2"] ~ "2_Middle",
-                                pred_lp > double_cutpoint_best["cut2"] ~ "1_High"),
-          pred_3grp_tert = factor(case_when(pred_lp < quantile(pred_lp, 0.33) ~ "3_Low",
-                                pred_lp >= quantile(pred_lp, 0.33) & pred_lp < quantile(pred_lp, 0.66) ~ "2_Middle",
-                                pred_lp >= quantile(pred_lp, 0.66) ~ "1_High"),
-                                ordered = TRUE),
-          pred_3grp_2550 = factor(case_when(pred_lp < quantile(pred_lp, 0.25) ~ "3_Low",
-                                pred_lp >= quantile(pred_lp, 0.25) &
-                                   pred_lp < quantile(pred_lp, 0.75) ~ "2_Middle",
-                                pred_lp >= quantile(pred_lp, 0.75) ~ "1_High"),
-                                ordered = TRUE))
-
-
-# Optimal 3 group cutpoints
-km_tert_opt <- survfit(surv_os ~ temp_filt3$pred_3grp_optimal)
-filt_os_opt <- ggsurvplot(km_tert_opt, data = temp_filt3, size = 1,
-   # conf.int = TRUE, # Add confidence interval
-   pval = TRUE, # Add p-value
-   pval.coord = c(42,.15),
-   risk.table = TRUE, # Add risk table
-   risk.table.height = 0.25, # change if you have >2 groups
-   risk.table.y.text.col = T, # show colors in table listing
-   ncensor.plot = FALSE,
-   ncensor.plot.height = 0.25,
-   xlab = "Time (months)", # adjust X axis label
-   xlim = c(0, 60),
-   break.time.by = 12, # break X axis in time intervals
-   legend.labs = c(lab1, lab2, lab3), #c("Low GARD", "Middle GARD", "High GARD"),
-   legend = c(.3,.3),
-   pval.size = 7,
-   font.legend = 18,
-   font.x = 18,
-   font.y = 18,
-   fontsize = 7
-   )
-filt_os_opt 
-```
 
 
 
@@ -509,7 +378,129 @@ abline(0,1,lty=2)
 
 
 # Fig 4 
+## Fig 4a - 3 groups
+```{r load 2 cutpoints packages}
+library(here)
+library(survival)
+library(ggpubr)
+library(survminer)
+library(rms) # for coxph function that has additional stats
+library(stringr)
+
+
+sweep_cutpoints2 <- function(tidy_data, surv_obj){
+   cutpoints_first = quantile(tidy_data$pred_lp, prob = seq(0, 1, 0.01))[-(1:5)]
+   cutpoints_first = cutpoints_first[-(96:101)]
+   cutpoint_first_vec <- c()
+   cutpoint_second_vec <- c()
+   low_n_vec <- c()
+   middle_n_vec <- c()
+   high_n_vec <- c()
+   chisq_vec <- c()
+   for (i in 1:length(cutpoints_first)){
+      pred_lp_after_cutoff <- tidy_data$pred_lp[tidy_data$pred_lp > min(cutpoints_first)]
+      cutpoints_second <- quantile(pred_lp_after_cutoff, prob = seq(0, 1, 0.01))[-(1:5)]
+      cutpoints_second <- cutpoints_second[-(96:101)]
+      for (j in 1:length(cutpoints_second)){
+         tidy_data_labs <- tidy_data %>%
+            mutate(pred_group = case_when(pred_lp <= cutpoints_first[i] ~ "low", 
+                                          pred_lp > cutpoints_first[i] &
+                                             pred_lp <= cutpoints_second[j] ~ "middle", 
+                                          pred_lp > cutpoints_second[j] ~ "high"))
+         survdiff_results <- survdiff(surv_obj ~ pred_group, data = tidy_data_labs)
+         chisq_vec <- c(chisq_vec, survdiff_results$chisq)
+         cutpoint_first_vec <- c(cutpoint_first_vec, cutpoints_first[[i]])
+         cutpoint_second_vec <- c(cutpoint_second_vec, cutpoints_second[[j]])
+         low_n_vec <- c(low_n_vec, nrow(tidy_data_labs %>% filter(pred_group == "low")))
+         middle_n_vec <- c(middle_n_vec, nrow(tidy_data_labs %>% filter(pred_group == "middle")))
+         high_n_vec <- c(high_n_vec, nrow(tidy_data_labs %>% filter(pred_group == "high")))
+      }
+   }
+   data.frame(cutpoint1 = cutpoint_first_vec,
+              cutpoint2 = cutpoint_second_vec,
+              cutdiff = cutpoint_second_vec - cutpoint_first_vec,
+              low_n = low_n_vec,
+              middle_n = middle_n_vec,
+              high_n = high_n_vec,
+              chisq = chisq_vec) %>%
+      rowwise() %>%
+      mutate(min_n = min(low_n, middle_n, high_n)) %>%
+      ungroup()
+}
+```
+
+```{r - load results}
+# load data
+temp_filt$pred_lp <- temp_filt$GARD
+
+# load_results
+surv_os <- Surv(time = temp_filt$Time_OS, event = temp_filt$Event_OS)
+
+cutpoints_filtered_os <- sweep_cutpoints2(temp_filt, surv_os)
+```
+
+```{r plot}
+# classify predictions for OS
+cutpoints_top <- cutpoints_filtered_os %>%
+  filter(min_n >= 11) %>% #require at least min_n samples in each group
+  filter(chisq > 10)  %>% # ==max(chisq)   #cutpoints with the highest chisq result
+  filter(cutdiff >= 10)
+
+df <- cutpoints_top[order(-cutpoints_top$chisq),]
+
+# they all cut the data with the same samples in each group
+# taking the first value to get a single value for each cutpoint
+rank <- 1
+double_cutpoint_best <- c(cut1 = df[rank, ]$cutpoint1, 
+                          cut2 = df[rank, ]$cutpoint2)
+
+lab1 = paste("GARD >",toString(round(10*df[rank, ]$cutpoint2)/10))
+lab2 = paste("GARD ",toString(round(10*df[rank, ]$cutpoint1)/10),"-",toString(round(10*df[rank, ]$cutpoint2)/10))
+lab3 = paste("GARD <",toString(round(10*df[rank, ]$cutpoint1)/10))
+
+temp_filt3 <- temp_filt %>%
+      mutate(
+          pred_3grp_optimal = case_when(pred_lp <= double_cutpoint_best["cut1"] ~ "3_Low",
+                                pred_lp > double_cutpoint_best["cut1"] &
+                                   pred_lp <= double_cutpoint_best["cut2"] ~ "2_Middle",
+                                pred_lp > double_cutpoint_best["cut2"] ~ "1_High"),
+          pred_3grp_tert = factor(case_when(pred_lp < quantile(pred_lp, 0.33) ~ "3_Low",
+                                pred_lp >= quantile(pred_lp, 0.33) & pred_lp < quantile(pred_lp, 0.66) ~ "2_Middle",
+                                pred_lp >= quantile(pred_lp, 0.66) ~ "1_High"),
+                                ordered = TRUE),
+          pred_3grp_2550 = factor(case_when(pred_lp < quantile(pred_lp, 0.25) ~ "3_Low",
+                                pred_lp >= quantile(pred_lp, 0.25) &
+                                   pred_lp < quantile(pred_lp, 0.75) ~ "2_Middle",
+                                pred_lp >= quantile(pred_lp, 0.75) ~ "1_High"),
+                                ordered = TRUE))
+
+
+# Optimal 3 group cutpoints
+km_tert_opt <- survfit(surv_os ~ temp_filt3$pred_3grp_optimal)
+filt_os_opt <- ggsurvplot(km_tert_opt, data = temp_filt3, size = 1,
+   risk.table = TRUE, # Add risk table
+   risk.table.height = 0.25, # change if you have >2 groups
+   risk.table.y.text.col = T, # show colors in table listing
+   ncensor.plot = FALSE,
+   ncensor.plot.height = 0.25,
+   xlab = "Months since diagnosis", 
+   xlim = c(0, 60),
+   break.time.by = 12, # break X axis in time intervals
+   ylab = "Overall Survival",
+   surv.scale = "percent",
+   legend.labs = c(lab1, lab2, lab3), #c("Low GARD", "Middle GARD", "High GARD")
+   )
+filt_os_opt 
+
+pdf(file="Figures/filt_os_opt.pdf")
+filt_os_opt
+dev.off()
+```
+
+
+## trial setup for 4c/d
 ```{python setup}
+
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -523,13 +514,12 @@ from scipy.optimize import curve_fit
 from matplotlib import collections as matcoll
 from scipy import stats 
 
-df = pd.read_csv('GARD_HPVpos6.csv')
+df = pd.read_csv('GARD_HPVpos8.csv')
 temp = df.loc[df['RT']=='definitive']
 
-# SOC range, cut
-cut = 64.185   # df['GARD'].median() # 
-tert_one = 46.1
-tert_two = 65
+# tertile GARD cutoffs
+tert_one = 46
+tert_two = 65.015
 
 # constants/calculations
 d = 2
@@ -541,24 +531,6 @@ df['alpha_g'] = ag
 gard = df['n']*df['d_c']*(ag+beta*df['d_c'])
 df['GARD'] = gard
 df['EQD2'] = df['TD'] * (df['d_c']+10) / (d+10) # alpha/beta = 10
-df['RxRSI'] = cut/(df['alpha_g']+beta*d)
-
-
-# weibull fits for above and below cut based on definitive
-h = temp.loc[temp['GARD'] > cut]
-s1 = WeibullFitter()
-s1.fit(h['Time_OS'],h['Event_OS'])
-l = temp.loc[temp['GARD'] <= cut]
-s2 = WeibullFitter()
-s2.fit(l['Time_OS'],l['Event_OS'])
-# save fit parameters
-s1_lambda = s1.lambda_ # adequate dose
-s1_rho = s1.rho_
-s2_lambda = s2.lambda_ # inadequate
-s2_rho = s2.rho_
-# plot weibull fit
-fig2 = s1.plot_survival_function(label='above cut', ci_show=False)
-s2.plot_survival_function(ax=fig2, label='below cut', ci_show=False)
 
 
 #  weibull fits for tertiles based on definitive
@@ -583,51 +555,30 @@ fig2 = s1.plot_survival_function(label='high GARD', ci_show=False)
 s2.plot_survival_function(ax=fig2, label='medium GARD', ci_show=False)
 s3.plot_survival_function(ax=fig2, label='low GARD', ci_show=False)
 
-
-# evaluate S1 fit at a value t
-# S1 is TD > GARD_T = 64.185
-# rho<1 => event likelihood decreases w/time
-def s1(t):
-    
-    # prev calculated parameters for weibull fit
-    s1_lambda = 317.96402740720754
-    s1_rho = 1.683186130952728
-
-    return np.exp(-np.power(t/s1_lambda, s1_rho))
-
-# evaluate S2 fit at a value t
-# below GARD_T
-def s2(t):
-
-    # prev calculated parameters for weibull fit
-    s2_lambda = 140.2728364836933
-    s2_rho = 1.7529473462418368
-
-    return np.exp(-np.power(t/s2_lambda, s2_rho))
-
 # evaluate surv_high fit at a value t
 def s_high(t):
     
-    s_high_lambda = 162.59840895531465
-    s_high_rho = 3.2277149721872997
+    s_high_lambda = s1.lambda_
+    s_high_rho = s1.rho_
 
     return np.exp(-np.power(t/s_high_lambda, s_high_rho))
 
 # evaluate surv_med fit at a value t
 def s_med(t):
     
-    s_med_lambda = 178.4081895526366
-    s_med_rho = 1.5342947530381978
+    s_med_lambda = s2.lambda_
+    s_med_rho = s2.rho_
 
     return np.exp(-np.power(t/s_med_lambda, s_med_rho))
 
 # evaluate surv_low fit at a value t
 def s_low(t):
     
-    s_low_lambda = 68.0990932580655
-    s_low_rho = 1.9166870289879596
+    s_low_lambda = s3.lambda_
+    s_low_rho = s3.rho_
 
     return np.exp(-np.power(t/s_low_lambda, s_low_rho))
+  
 
 
 # for 2N patients, draw from RSI distribution
@@ -643,11 +594,10 @@ def rsi_sample(N, distr):
 rt_low = 60.
 rt_high = 70.
 cut = 64.185   # df['GARD'].median() # 
-tert_one = 46.1
-tert_two = 65.
+tert_one = 46
+tert_two = 65.015
 
 rsi_low = np.exp(-n*d*cut/rt_low) # max RSI for de-escalation
-
 
 
 # returns penalized survival curves for 2 treatment groups (control and boosted)
@@ -716,7 +666,7 @@ def trial_three(temp, t, style):
     return surv1, surv2, count1, count2, deesc
 ```
 
-## Fig 4a
+## Fig 4c
 ```{python - empiric deescalation}
 N = 200 # patients per arm
 rsi_distr = df['RSI']
@@ -757,7 +707,7 @@ plt.plot(t, os1, color='coral', label='Standard dose (70Gy)')
 plt.plot(t, os2, color='peachpuff', label='De-intensified dose (60Gy)')
 plt.legend(loc='lower left')
 plt.xlabel('Months')
-plt.ylabel('Percent free of local recurrence')
+plt.ylabel('Overall Survival')
 ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: '{:.0%}'.format(y))) 
 plt.ylim(0,1)
 plt.xlim(0,tmax)
@@ -765,24 +715,15 @@ plt.show()
 
 print(style,'de-escalation,',str(N),'patients per arm,',str(repeats),'repeats')
 
-print('2 years')
-print(lower1[12], os1[12], upper1[12])
-print(lower2[12], os2[12], upper2[12])
-
 print('3 years')
 print(lower1[18], os1[18], upper1[18])
 print(lower2[18], os2[18], upper2[18])
 
-print('6 years')
-print(lower1[-1], os1[-1], upper1[-1])
-print(lower2[-1], os2[-1], upper2[-1])
-
 print('Average # in l/m/h GARD, group 1:'+str(np.mean(counts1, axis=0)))
 print('Average # in l/m/h GARD, group 2:'+str(np.mean(counts2, axis=0)))
-print('Average # de-escalated in group 2: '+str(np.mean(deesc)))
 ```
 
-## Fig 4b
+## Fig 4d
 ``` {python - selective deescalation shows non-inferiority}
 N = 200 # patients per arm
 rsi_distr = df['RSI']
@@ -823,7 +764,7 @@ plt.plot(t, os1, color='coral', label='Standard dose (70Gy)')
 plt.plot(t, os2, color='peachpuff', label='De-intensified dose (60Gy)')
 plt.legend(loc='lower left')
 plt.xlabel('Months')
-plt.ylabel('Percent free of local recurrence')
+plt.ylabel('Overall Survival')
 ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: '{:.0%}'.format(y))) 
 plt.ylim(0,1)
 plt.xlim(0,tmax)
@@ -831,21 +772,14 @@ plt.show()
 
 print(style,'de-escalation,',str(N),'patients per arm,',str(repeats),'repeats')
 
-print('2 years')
-print(lower1[12], os1[12], upper1[12])
-print(lower2[12], os2[12], upper2[12])
-
 print('3 years')
 print(lower1[18], os1[18], upper1[18])
 print(lower2[18], os2[18], upper2[18])
 
-print('6 years')
-print(lower1[-1], os1[-1], upper1[-1])
-print(lower2[-1], os2[-1], upper2[-1])
-
 print('Average # in l/m/h GARD, group 1:'+str(np.mean(counts1, axis=0)))
 print('Average # in l/m/h GARD, group 2:'+str(np.mean(counts2, axis=0)))
-print('Average # de-escalated in group 2:'+str(np.mean(deesc)))
+print('# de-escalated in group 2:'+str(np.mean(deesc)))
+
 ```
 # Supp Fig 1
 ## Supp Fig 1a
