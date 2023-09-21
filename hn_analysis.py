@@ -62,7 +62,6 @@ df['EQD2'] = df['TD'] * (df['d_c']+10) / (d+10) # alpha/beta = 10
 # =============================================================================
 
 
-# =============================================================================
 # # GARD vs EQD boxplot
 # fig, (ax1, ax2) = plt.subplots(2, figsize=(7,5))
 # sns.boxplot(x=df['EQD2'], ax=ax1, color='white', showfliers= False)
@@ -74,28 +73,27 @@ df['EQD2'] = df['TD'] * (df['d_c']+10) / (d+10) # alpha/beta = 10
 # ax1.set(xlabel="EQD2 (Gy)")
 # ax2.set(xlabel="GARD")
 # fig.tight_layout()
-# 
-# 
-# # a = list(df['EQD2']) + list(df['GARD'])
-# # b = list(['EQD2']*len(df)) + list(['GARD']*len(df))
-# # df2 = np.transpose(pd.DataFrame(data=[a,b]))
-# # df2 = df2.rename(columns={0: "value", 1: "type"})
-# # f = plt.figure(figsize=(10,7))
-# # ax1 = f.add_subplot(1,1,1)
-# # ax1.set_xlim([0,110])
-# # ax2 = ax1.twiny()
-# # ax2.set_xlim([0,110])
-# 
-# # sns.set_style('white')
-# # sns.boxplot(data=df2, ax=ax1, x="value", color='white', y='type', showfliers= False)
-# # sns.stripplot(data=df2, ax=ax2, x="value", palette="deep", y="type")
-# # plt.xlim([0,110])
-# # plt.ylabel('')
-# # ax1.set_xlabel('Gy')
-# # ax2.set_xlabel('GARD')
-# # f.tight_layout()
-# # plt.show()
-# =============================================================================
+
+
+# a = list(df['EQD2']) + list(df['GARD'])
+# b = list(['EQD2']*len(df)) + list(['GARD']*len(df))
+# df2 = np.transpose(pd.DataFrame(data=[a,b]))
+# df2 = df2.rename(columns={0: "value", 1: "type"})
+# f = plt.figure(figsize=(10,7))
+# ax1 = f.add_subplot(1,1,1)
+# ax1.set_xlim([0,110])
+# ax2 = ax1.twiny()
+# ax2.set_xlim([0,110])
+
+# sns.set_style('white')
+# sns.boxplot(data=df2, ax=ax1, x="value", color='white', y='type', showfliers= False)
+# sns.stripplot(data=df2, ax=ax2, x="value", palette="deep", y="type")
+# plt.xlim([0,110])
+# plt.ylabel('')
+# ax1.set_xlabel('Gy')
+# ax2.set_xlabel('GARD')
+# f.tight_layout()
+# plt.show()
 
 
 # =============================================================================
@@ -116,28 +114,26 @@ df['EQD2'] = df['TD'] * (df['d_c']+10) / (d+10) # alpha/beta = 10
 # =============================================================================
 
 
-# =============================================================================
-# # # joint plot
-# # 2 colors 
-# df['color'] = np.where(((df['EQD2'] >= 69) & (df['EQD2'] <= 71)), True, False)
-# f = sns.jointplot(data=df, x=df['EQD2'], y=df['GARD'], xlim=(30,80), ylim = (0,130), hue="color", legend=False)
-# f.set_axis_labels('EQD2 (Gy)', 'GARD', fontsize=14)
-# 
-# # one color
-# df["_"]=""
-# f = sns.jointplot(data=df, x=df['EQD2'], y=df['GARD'], xlim=(30,80), ylim=(0,130), hue="_")
-# f.set_axis_labels('EQD2 (Gy)', 'GARD', fontsize=14)
-# 
-# # GARD boxplot for EQD in 69-71
-# df_filt = df[((df['EQD2'] >= 69) & (df['EQD2'] <= 71))]
-# sns.set(rc={'figure.figsize':(1,7)})
-# sns.set_style(style='white')
-# ax1 = sns.boxplot(y=df_filt['GARD'], color='white', showfliers= False)
-# sns.stripplot(y=df_filt['GARD'], ax=ax1, color=(0.8666666666666667, 0.5176470588235295, 0.3215686274509804))
-# ax1.set(ylim=(0,130))
-# ax1.set(ylabel="")
-# ax1.set(title="EQD ~70 Gy \n")
-# =============================================================================
+# # joint plot
+# 2 colors 
+df['color'] = np.where(((df['EQD2'] >= 69) & (df['EQD2'] <= 71)), True, False)
+f = sns.jointplot(data=df, x=df['EQD2'], y=df['GARD'], xlim=(30,80), ylim = (0,130), hue="color", legend=False)
+f.set_axis_labels('EQD2 (Gy)', 'GARD', fontsize=14)
+
+# one color
+df["_"]=""
+f = sns.jointplot(data=df, x=df['EQD2'], y=df['GARD'], xlim=(30,80), ylim=(0,130), hue="_")
+f.set_axis_labels('EQD2 (Gy)', 'GARD', fontsize=14)
+
+# GARD boxplot for EQD in 69-71
+df_filt = df[((df['EQD2'] >= 69) & (df['EQD2'] <= 71))]
+sns.set(rc={'figure.figsize':(1,7)})
+sns.set_style(style='white')
+ax1 = sns.boxplot(y=df_filt['GARD'], color='white', showfliers= False)
+sns.stripplot(y=df_filt['GARD'], ax=ax1, color='#ff7f0e', edgecolors='w')
+ax1.set(ylim=(0,130))
+ax1.set(ylabel="")
+ax1.set(title="EQD ~70 Gy \n")
 
 
 # a = list(df['EQD2']) + list(df['GARD'])
@@ -517,68 +513,70 @@ def trial_three(temp, t, style):
 # =============================================================================
 
 
-# trial with 3-curve fits
-N = 200 # patients per arm
-rsi_distr = df['RSI']
-tmin = 0
-tmax = 72
-t = np.linspace(tmin, tmax, 37) # time axis in months
-style = 'random'
-repeats = 20
-
-curve1 = []
-curve2 = []
-var1 = []
-var2 = []
-counts1 = []
-counts2 = []
-down = []
-for i in range(repeats):
-    
-    patients = pd.DataFrame(rsi_sample(N, rsi_distr), columns=['RSI'])
-    surv1, surv2, count1, count2, deesc = trial_three(patients, t, style)
-    curve1.append(surv1) #np.mean(surv1, axis=0)
-    curve2.append(surv2) #np.mean(surv2, axis=0)
-    counts1.append(count1)
-    counts2.append(count2)
-    down.append(deesc)
-    
-os1 = np.mean(curve1, axis=0)
-lower1 = np.percentile(curve1, 2.5, axis=0)
-upper1 = np.percentile(curve1, 97.5, axis=0)
-os2 = np.mean(curve2, axis=0)
-lower2 = np.percentile(curve2, 2.5, axis=0)
-upper2 = np.percentile(curve2, 97.5, axis=0)
-
-fig, ax = plt.subplots(figsize=(7,5),dpi=100) # 
-plt.fill_between(t, lower1, upper1, color='#d95f02', alpha=.3) 
-plt.fill_between(t, lower2, upper2, color='peachpuff', alpha=.3) 
-plt.plot(t, os1, color='coral', label='Standard dose (70Gy)')
-plt.plot(t, os2, color='peachpuff', label='De-intensified dose (60Gy)')
-plt.legend(loc='lower left')
-plt.xlabel('Months')
-plt.ylabel('Percent free of local recurrence')
-ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: '{:.0%}'.format(y))) 
-plt.ylim(0,1)
-plt.xlim(0,60)
-
-print(style,'de-escalation,',str(N),'patients per arm,',str(repeats),'repeats')
-
-# print('2 years')
-# print(lower1[12], os1[12], upper1[12])
-# print(lower2[12], os2[12], upper2[12])
-
-print('3 years')
-print(lower1[18], os1[18], upper1[18])
-print(lower2[18], os2[18], upper2[18])
-
-# print('6 years')
-# print(lower1[-1], os1[-1], upper1[-1])
-# print(lower2[-1], os2[-1], upper2[-1])
-
-print('Average # in l/m/h GARD, group 1:'+str(np.mean(counts1, axis=0)))
-print('Average # in l/m/h GARD, group 2:'+str(np.mean(counts2, axis=0)))
-print('# de-escalated in group 2:'+str(np.mean(deesc)))
+# =============================================================================
+# # trial with 3-curve fits
+# N = 200 # patients per arm
+# rsi_distr = df['RSI']
+# tmin = 0
+# tmax = 72
+# t = np.linspace(tmin, tmax, 37) # time axis in months
+# style = 'random'
+# repeats = 20
+# 
+# curve1 = []
+# curve2 = []
+# var1 = []
+# var2 = []
+# counts1 = []
+# counts2 = []
+# down = []
+# for i in range(repeats):
+#     
+#     patients = pd.DataFrame(rsi_sample(N, rsi_distr), columns=['RSI'])
+#     surv1, surv2, count1, count2, deesc = trial_three(patients, t, style)
+#     curve1.append(surv1) #np.mean(surv1, axis=0)
+#     curve2.append(surv2) #np.mean(surv2, axis=0)
+#     counts1.append(count1)
+#     counts2.append(count2)
+#     down.append(deesc)
+#     
+# os1 = np.mean(curve1, axis=0)
+# lower1 = np.percentile(curve1, 2.5, axis=0)
+# upper1 = np.percentile(curve1, 97.5, axis=0)
+# os2 = np.mean(curve2, axis=0)
+# lower2 = np.percentile(curve2, 2.5, axis=0)
+# upper2 = np.percentile(curve2, 97.5, axis=0)
+# 
+# fig, ax = plt.subplots(figsize=(7,5),dpi=100) # 
+# plt.fill_between(t, lower1, upper1, color='#d95f02', alpha=.3) 
+# plt.fill_between(t, lower2, upper2, color='peachpuff', alpha=.3) 
+# plt.plot(t, os1, color='coral', label='Standard dose (70Gy)')
+# plt.plot(t, os2, color='peachpuff', label='De-intensified dose (60Gy)')
+# plt.legend(loc='lower left')
+# plt.xlabel('Months')
+# plt.ylabel('Percent free of local recurrence')
+# ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: '{:.0%}'.format(y))) 
+# plt.ylim(0,1)
+# plt.xlim(0,60)
+# 
+# print(style,'de-escalation,',str(N),'patients per arm,',str(repeats),'repeats')
+# 
+# # print('2 years')
+# # print(lower1[12], os1[12], upper1[12])
+# # print(lower2[12], os2[12], upper2[12])
+# 
+# print('3 years')
+# print(lower1[18], os1[18], upper1[18])
+# print(lower2[18], os2[18], upper2[18])
+# 
+# # print('6 years')
+# # print(lower1[-1], os1[-1], upper1[-1])
+# # print(lower2[-1], os2[-1], upper2[-1])
+# 
+# print('Average # in l/m/h GARD, group 1:'+str(np.mean(counts1, axis=0)))
+# print('Average # in l/m/h GARD, group 2:'+str(np.mean(counts2, axis=0)))
+# print('# de-escalated in group 2:'+str(np.mean(deesc)))
+# =============================================================================
 
 
 

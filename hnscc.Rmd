@@ -100,6 +100,7 @@ quantile(temp$GARD)
 sd(temp$GARD)
 sd(temp$TD)
 sd(temp$EQD2)
+median(temp$EQD2)
 ```
 
 ```{r - survival stats}
@@ -112,8 +113,8 @@ summary(survfit(Surv(Time_OS, Event_OS)~1, data=gard_high), times = c(36, 60))
 
 # by tertiles
 tert_low <- temp_filt[temp_filt$GARD < 46.097, ]
-tert_med <- subset(temp_filt, GARD > 46.086 & GARD < 65.03)
-tert_high <- temp_filt[temp_filt$GARD >65.03, ]
+tert_med <- subset(temp_filt, GARD > 46.086 & GARD < 65.014)
+tert_high <- temp_filt[temp_filt$GARD >65.014, ]
 
 summary(survfit(Surv(Time_OS, Event_OS)~1, data=tert_low), times = c(36))
 summary(survfit(Surv(Time_OS, Event_OS)~1, data=tert_med), times = c(36))
@@ -174,6 +175,8 @@ exp(confint(f_discrete))
 ```
 # Fig 1
 ```{python joint plot}
+# this runs better in python itself
+
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -192,29 +195,28 @@ gard = df['n']*df['d_c']*(ag+beta*df['d_c'])
 df['GARD'] = gard
 df['EQD2'] = df['TD'] * (df['d_c']+10) / (d+10) # alpha/beta = 10
 
-# joint plot
-# 2 colors
+# # joint plot
+# 2 colors 
 df['color'] = np.where(((df['EQD2'] >= 69) & (df['EQD2'] <= 71)), True, False)
 f = sns.jointplot(data=df, x=df['EQD2'], y=df['GARD'], xlim=(30,80), ylim = (0,130), hue="color", legend=False)
 f.set_axis_labels('EQD2 (Gy)', 'GARD', fontsize=14)
-plt.show()
 
 # one color
 df["_"]=""
 f = sns.jointplot(data=df, x=df['EQD2'], y=df['GARD'], xlim=(30,80), ylim=(0,130), hue="_")
 f.set_axis_labels('EQD2 (Gy)', 'GARD', fontsize=14)
-plt.show()
 
 # GARD boxplot for EQD in 69-71
 df_filt = df[((df['EQD2'] >= 69) & (df['EQD2'] <= 71))]
 sns.set(rc={'figure.figsize':(1,7)})
 sns.set_style(style='white')
 ax1 = sns.boxplot(y=df_filt['GARD'], color='white', showfliers= False)
-sns.stripplot(y=df_filt['GARD'], ax=ax1, color=(0.8666666666666667, 0.5176470588235295, 0.3215686274509804))
+sns.stripplot(y=df_filt['GARD'], ax=ax1, color='#ff7f0e', edgecolors='w')
 ax1.set(ylim=(0,130))
 ax1.set(ylabel="")
 ax1.set(title="EQD ~70 Gy \n")
-plt.show()
+
+
 ```
 
 # Fig 2
@@ -543,7 +545,7 @@ temp = df.loc[df['RT']=='definitive']
 
 # tertile GARD cutoffs
 tert_one = 46
-tert_two = 65.015
+tert_two = 65.014
 
 # constants/calculations
 d = 2
